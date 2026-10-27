@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Kalkulačka dojezdů techniků - Plná Databáze Firem</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome Ikony -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; -webkit-tap-highlight-color: transparent; }
+    #map { height: 100%; min-height: 300px; sm:min-height: 360px; width: 100%; border-radius: 0.75rem; z-index: 1; }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 p-2 sm:p-4">
+  <div class="max-w-6xl mx-auto bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+    
+    <!-- Hlavička -->
+    <div class="bg-slate-900 text-white p-3.5 sm:p-4 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="bg-red-600 p-2.5 rounded-xl shadow-md">
+          <i class="fa-solid fa-map-location-dot text-xl text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold leading-tight">Kalkulačka dojezdů techniků</h1>
+          <p class="text-xs text-slate-400">Kompletní databáze firem + Mapy.cz REST API</p>
+        </div>
+      </div>
+      <button id="btn-settings" type="button" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 border border-slate-700 transition shadow-sm">
+        <i class="fa-solid fa-sliders text-red-400"></i> <span class="hidden sm:inline">Správa databáze</span>
+      </button>
+    </div>
+
+    <!-- Dvousloupcové rozvržení -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 p-3.5 sm:p-5">
+      
+      <!-- LEVÝ SLOUPEC: Formulář -->
+      <div class="lg:col-span-7 space-y-3 order-1 lg:order-1">
+        
+        <!-- Výběr technika -->
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Jméno technika</label>
+          <div class="relative">
+            <select id="tech-select" class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs sm:text-sm rounded-xl p-2.5 pl-9 focus:ring-2 focus:ring-red-500 appearance-none font-medium">
+              <option value="">-- Vyberte technika --</option>
+            </select>
+            <i class="fa-solid fa-user-gear absolute left-3 top-3 text-slate-400 text-xs"></i>
+            <i class="fa-solid fa-chevron-down absolute right-3 top-3 text-slate-400 text-xs pointer-events-none"></i>
+          </div>
+        </div>
+
+        <!-- Start -->
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Místo startu (Uzamčeno na GPS)</label>
+          <div class="relative">
+            <input type="text" id="start-location" readonly placeholder="Vyberte technika výše..." class="w-full bg-slate-100 border border-slate-200 text-slate-700 text-xs sm:text-sm rounded-xl p-2.5 pl-9 font-semibold">
+            <i class="fa-solid fa-location-dot absolute left-3 top-3 text-emerald-600 text-xs"></i>
+          </div>
+        </div>
+
+        <!-- Průjezdní body -->
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Průjezdní body (Mezizastávky)</label>
+          <div id="via-container" class="space-y-2"></div>
+          <button id="btn-add-via" type="button" class="mt-1.5 text-xs font-semibold text-red-600 hover:text-red-800 flex items-center gap-1.5 py-0.5">
+            <i class="fa-solid fa-circle-plus text-sm"></i> Přidat průjezdní bod
+          </button>
+        </div>
+
+        <!-- Cílové místo -->
+        <div class="relative space-y-1.5">
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Cílové místo / Firma / Adresa</label>
+          <div class="relative flex gap-1.5">
+            <div class="relative flex-1">
+              <input type="text" id="target-location" autocomplete="off" placeholder="Napište firmu nebo přesnou adresu s č.p...." class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-xs sm:text-sm rounded-xl p-2.5 pl-9 focus:ring-2 focus:ring-red-500 font-medium">
+              <i class="fa-solid fa-flag-checkered absolute left-3 top-3 text-red-500 text-xs"></i>
+            </div>
+            <button id="btn-search-target" type="button" class="bg-red-600 hover:bg-red-700 text-white font-medium px-3.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition">
+              <i class="fa-solid fa-magnifying-glass"></i> <span class="hidden sm:inline">Hledat</span>
+            </button>
+          </div>
+
+          <!-- Našeptávač firem -->
+          <div id="target-suggestions" class="hidden absolute left-0 right-0 sm:right-12 mt-1 bg-white border border-slate-300 rounded-xl shadow-2xl max-h-44 overflow-y-auto z-30 custom-scrollbar"></div>
+
+          <!-- Rozevírací seznam Rychlé volby pro Cíl -->
+          <div class="relative">
+            <select id="quick-target-select" class="w-full bg-slate-100 border border-slate-200 text-slate-700 text-xs rounded-lg p-2 pr-8 focus:ring-2 focus:ring-red-500 appearance-none cursor-pointer font-medium">
+              <option value="">-- Rychlá volba z databáze firem --</option>
+            </select>
+            <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 text-xs pointer-events-none"></i>
+          </div>
+        </div>
+
+        <!-- Volba typu trasy -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-2 text-xs">
+          <div class="flex items-center justify-between">
+            <label for="route-mode" class="font-bold text-slate-800 flex items-center gap-1.5">
+              <i class="fa-solid fa-sliders text-red-600"></i> Cesta TAM:
+            </label>
+            <select id="route-mode" class="bg-white border border-slate-300 text-slate-800 rounded-lg p-1.5 text-xs focus:ring-2 focus:ring-red-500 font-medium">
+              <option value="fastest">Nejrychlejší (preferovat dálnice)</option>
+              <option value="shortest">Nejkratší (nejnižší km)</option>
+              <option value="regular">Běžná (mimo dálnice)</option>
+            </select>
+          </div>
+
+          <!-- Cesta tam i zpět -->
+          <div class="flex items-center justify-between border-t border-slate-200 pt-2">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" id="round-trip" class="w-4 h-4 text-red-600 rounded cursor-pointer">
+              <label for="round-trip" class="font-bold text-slate-800 cursor-pointer select-none">Cesta TAM I ZPĚT</label>
+            </div>
+            <span class="text-slate-400 italic text-[11px]">Zpět jedou z cíle přímo na start (vynechají průjezdy)</span>
+          </div>
+        </div>
+
+        <!-- Tlačítko Spočítat -->
+        <button id="btn-calculate" type="button" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold p-3 rounded-xl shadow-md transition flex items-center justify-center gap-2 text-xs sm:text-sm">
+          <i class="fa-solid fa-calculator"></i> Spočítat dojezdovou vzdálenost
+        </button>
+
+        <div id="status-msg" class="hidden text-center py-1.5 text-xs font-medium text-slate-500 flex items-center justify-center gap-2">
+          <i class="fa-solid fa-circle-notch fa-spin text-red-600 text-sm"></i> Počítám trasu...
+        </div>
+
+        <!-- Výsledková karta -->
+        <div id="result-card" class="hidden bg-slate-900 text-white rounded-xl p-3.5 space-y-2.5 shadow-inner">
+          <div class="flex justify-between items-start border-b border-slate-800 pb-2.5">
+            <div>
+              <div class="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Celková vzdálenost</div>
+              <div class="flex items-baseline gap-1.5">
+                <div id="res-distance" class="text-2xl sm:text-3xl font-extrabold text-red-400">0 km</div>
+                <span id="res-round-badge" class="hidden text-[10px] bg-red-500/20 text-red-300 px-2 py-0.5 rounded font-semibold border border-red-500/30">Tam i zpět</span>
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Celkový čas jízdy</div>
+              <div id="res-duration" class="text-lg sm:text-xl font-bold text-slate-200">0 min</div>
+            </div>
+          </div>
+
+          <div class="text-xs text-slate-300 space-y-1">
+            <div><strong>Trasa:</strong> <span id="res-path-text">-</span></div>
+            <div><strong>Režim cesty:</strong> <span id="res-mode-text" class="text-amber-300 font-medium">-</span></div>
+          </div>
+
+          <!-- Tlačítka pro akce -->
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <button id="btn-copy-km" type="button" class="bg-red-600 hover:bg-red-500 text-white font-semibold py-2 px-2.5 rounded-lg text-xs flex items-center justify-center gap-1.5 transition">
+              <i class="fa-solid fa-copy"></i> Kopírovat km
+            </button>
+            <button id="btn-copy-summary" type="button" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2 px-2.5 rounded-lg text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition">
+              <i class="fa-solid fa-file-lines"></i> Souhrn
+            </button>
+          </div>
+
+          <a id="btn-google-maps" target="_blank" href="#" class="w-full bg-slate-800 hover:bg-slate-700 text-blue-300 border border-slate-700 font-medium py-2 px-2.5 rounded-lg text-xs flex items-center justify-center gap-2 transition">
+            <i class="fa-solid fa-map-location-dot text-amber-400"></i> Otevřít kompletní trasu v Google Maps
+          </a>
+        </div>
+
+      </div>
+
+      <!-- PRAVÝ SLOUPEC: Mapa -->
+      <div class="lg:col-span-5 flex flex-col order-2 lg:order-2">
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 flex-1 flex flex-col h-full">
+          <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between items-center">
+            <span>Mapa vypočítané trasy</span>
+            <span class="text-[9px] text-slate-400">OpenStreetMap + Mapy.cz API</span>
+          </div>
+          <div class="flex-1 min-h-[350px] lg:min-h-[450px] relative rounded-xl overflow-hidden border border-slate-200 shadow-inner">
+            <div id="map"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal Nastavení & Databáze -->
+  <div id="modal-settings" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 z-50">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-4.5 shadow-2xl space-y-3.5">
+      
+      <div class="flex justify-between items-center border-b pb-2">
+        <div class="flex gap-1.5">
+          <button id="tab-btn-techs" type="button" class="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-600 text-white">Technici</button>
+          <button id="tab-btn-companies" type="button" class="text-xs font-bold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200">Databáze firem</button>
+        </div>
+        <button id="btn-close-modal" type="button" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <div id="tab-techs" class="space-y-3">
+        <div class="space-y-1.5 max-h-52 overflow-y-auto pr-1 custom-scrollbar" id="tech-manage-list"></div>
+        <div class="border-t pt-2 space-y-1.5">
+          <span class="text-xs font-bold text-slate-700">Přidat nového technika</span>
+          <div class="grid grid-cols-2 gap-2">
+            <input type="text" id="new-tech-name" placeholder="Jméno technika" class="border rounded-lg p-2 text-xs">
+            <input type="text" id="new-tech-start" placeholder="Název / Popis adresa" class="border rounded-lg p-2 text-xs">
+            <input type="text" id="new-tech-lat" placeholder="GPS Šířka (Lat - např. 49.6775)" class="border rounded-lg p-2 text-xs">
+            <input type="text" id="new-tech-lon" placeholder="GPS Délka (Lon - např. 18.3305)" class="border rounded-lg p-2 text-xs">
+          </div>
+          <button id="btn-add-tech" type="button" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg text-xs transition">Přidat technika</button>
+        </div>
+      </div>
+
+      <div id="tab-companies" class="hidden space-y-3">
+        <div class="space-y-1.5 max-h-52 overflow-y-auto pr-1 custom-scrollbar" id="company-manage-list"></div>
+        <div class="border-t pt-2 space-y-1.5">
+          <span class="text-xs font-bold text-slate-700">Přidat novou firmu / zákazníka</span>
+          <div class="grid grid-cols-2 gap-2">
+            <input type="text" id="new-company-name" placeholder="Název firmy" class="border rounded-lg p-2 text-xs">
+            <input type="text" id="new-company-address" placeholder="Adresa" class="border rounded-lg p-2 text-xs">
+            <input type="text" id="new-company-lat" placeholder="GPS Lat (volitelné)" class="border rounded-lg p-2 text-xs">
+            <input type="text" id="new-company-lon" placeholder="GPS Lon (volitelné)" class="border rounded-lg p-2 text-xs">
+          </div>
+          <button id="btn-add-company" type="button" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-lg text-xs transition">Uložit firmu do databáze</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    /* ========================================================================= */
+    /* VLOŽENÝ API KLÍČ Z DEVELOPER.MAPY.CZ */
+    const MAPY_CZ_API_KEY = "AK2XXsDRYuHkVptMw4wo2kRKq50c2uqz9U_959eGjL4";
+    /* ========================================================================= */
+
+    function safeGet(key, def) {
+      try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : def; } catch(e) { return def; }
+    }
+    function safeSet(key, val) {
+      try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+    }
+
+    // PŘESNÉ MĚŘENÉ GPS SOUŘADNICE ZÁKLADEN
+    const defaultTechnicians = [
+      { id: '1', name: 'Palič', start: 'V Oblouku 114, Čestlice', lat: 50.0046792, lon: 14.5704439 },
+      { id: '2', name: 'Vosyka', start: 'V Oblouku 114, Čestlice', lat: 50.0046792, lon: 14.5704439 },
+      { id: '3', name: 'Nyč', start: 'V Oblouku 114, Čestlice', lat: 50.0046792, lon: 14.5704439 },
+      { id: '4', name: 'Omelka', start: '17. listopadu 907, Frýdek Místek', lat: 49.6775314, lon: 18.3305383 },
+      { id: '5', name: 'Gola', start: '17. listopadu 907, Frýdek Místek', lat: 49.6775314, lon: 18.3305383 },
+      { id: '6', name: 'Obruča', start: '17. listopadu 907, Frýdek Místek', lat: 49.6775314, lon: 18.3305383 },
+      { id: '7', name: 'Drbohlav', start: '17. listopadu 907, Frýdek Místek', lat: 49.6775314, lon: 18.3305383 }
+    ];
+
+    // KOMPLETNÍ DATABÁZE VŠECH FIREM
+    const defaultCompanies = [{"name": "GX Innovation, s.r.o. / GX BOHEMIA", "address": "17. listopadu 907, Frýdek Místek, 73801", "lat": 49.6775314, "lon": 18.3305383}, {"name": "GX SOLUTIONS BOHEMIA (Čestlice)", "address": "V Oblouku 114, Čestlice, 25101", "lat": 50.0046792, "lon": 14.5704439}, {"name": "1. BOHDALECKÁ, s.r.o.", "address": "Vinohradská 162, Praha 3-Vinohrady, 13000"}, {"name": "3D-Lasertec s.r.o.", "address": "Starý Klíčov 143, Mrákov, 34501"}, {"name": "A. Pöttinger, spol. s r.o.", "address": "Číčenická 1284, Vodňany I, 38901"}, {"name": "A.RAYMOND JABLONEC s.r.o.", "address": "Československé armády 4609/27, Jablonec nad Nisou - Rýnovice, 46605"}, {"name": "A.Z.I.E. - service trades, s.r.o.", "address": "Holvekova 645/36, Ostrava - Kunčičky, 71800"}, {"name": "AAH Czech s.r.o.", "address": "Nové Zákupy 528, 47123 Zákupy"}, {"name": "ABB s.r.o. - pobočka Brno", "address": "Vyskočilova 1561/4a, Praha 4-Michle, 14000"}, {"name": "Abex Substráty a.s.", "address": "Žabeň 203, 739 25 Žabeň, Žabeň, 73925"}, {"name": "ACL Anodizing s. r. o.", "address": "U Přehrady 5206/63, Jablonec nad Nisou, 46602"}, {"name": "ACL AUTOMOTIVE s.r.o", "address": "Newtonova 596,, Liberec XXIII - Doubí, 46312"}, {"name": "ADpodlahy group s.r.o.", "address": "Žerotinova 1114, Vsetín, 75501"}, {"name": "ADREMOT Technologies s.r.o.", "address": "Čs. exilu 473/17, Poruba, 708 00 Ostrava, Poruba, 70800"}, {"name": "ADS.M s.r.o.", "address": "Dělnická 54, Velebudice, Most, 43401"}, {"name": "Advey services s. r. o.", "address": "Ostrava - Pustkovec, Technologická 372/2, PSČ 708 00, Poruba, 70800"}, {"name": "Aero Invest s.r.o.", "address": "Vojenská 125, Košatka, 739 23 Stará Ves nad Ondřejni, Košatka, 73923"}, {"name": "AG TEAM s.r.o.", "address": "Bráfova tř. 764/50, Horka-Domky, 67401"}, {"name": "AGC Automotive Czech a.s.", "address": "Osada 33, Bílina - Chudeřice, 41825"}, {"name": "AGC Flat Glass Czech a.s., člen AGC Group", "address": "Sklářská 450, Teplice, 41674"}, {"name": "Agro Logistic Solution s.r.o.", "address": "Věry Pánkové 829/2, Nové Sady, 77900"}, {"name": "AGRO TRANSHANDEL Sp. z o.o.", "address": "Szewce-Mylna 12, BUK, 64-320"}, {"name": "AGRO ZVOLE, a.s.", "address": "Zvole 112, Zvole, 59256"}, {"name": "Agrochov Dynín, s.r.o.", "address": "č.p. 48, Dynín, 37364"}, {"name": "Agro-Rydzyna Sp. z o.o.", "address": "Kolejowa 7k, 4-130 Rydzyna"}, {"name": "AIC Processing s.r.o.", "address": "Zdíky 34, Bujanov, 38241"}, {"name": "ALDREKO Alicja Szybiak", "address": "Przedmieście Dubieckie 4L, DUBIECKO, 37-750"}, {"name": "ALGON, a.s.", "address": "Ringhofferova 1/115, Praha 5, 15521"}, {"name": "Algon, a.s.- pobočka korespondenční adresa", "address": "Joštova 1, Cheb, 35002"}, {"name": "Alleima CZ spol. s r.o.", "address": "Vítězslava Nezvala 5502, 43001 Chomutov"}, {"name": "Almeida s.r.o.", "address": "Bohumínská 1949/3, Karviná - Fryštát, 73301"}, {"name": "Alois Jura", "address": "Zborovice - Medlov 14, Medlov, 76802"}, {"name": "ALPER a.s.", "address": "Vrahovická 4530, Prostějov (část), 79601"}, {"name": "ANEXIA s.r.o.", "address": "Lubenská 1588, Rakovník I, 26980"}, {"name": "Antonín Mrkva", "address": "Na drahách 270, Sviadnov, 739 25"}, {"name": "ANWIM S.A.", "address": "Daimlera 2, WARSZAWA, 02-460"}, {"name": "APAG Elektronik s.r.o.", "address": "U Panasonicu 396, Staré Čívice, 53006"}, {"name": "Aptar Czech Republic s.r.o.", "address": "ČKYNĚ 299, Čkyně, 38481"}, {"name": "Arbaro SE", "address": "Primátorská 296/38, Praha 8-Libeň, 18000"}, {"name": "Arcibiskupské lesy a statky Olomouc s.r.o.", "address": "Dvorského 5/17,, Svatý Kopeček, 77900"}, {"name": "ARPOL s.r.o.", "address": "Na svahu 553, Vřesina u Bílovce, 74285"}, {"name": "ARRIVA STŘEDNÍ ČECHY s.r.o. - PROBO-BUS a.s.", "address": "Pod Hájem 97, Králův Dvůr, 26701"}, {"name": "ASBENA Trans s.r.o.", "address": "Karlovo náměstí 290/16, Praha 2 - Nové Město, 12000"}, {"name": "Ascendum Stavební stroje Czech s. r. o.", "address": "Plzeňská 245, Chrášťany, 25219"}, {"name": "Ascorium Mladá Boleslav s.r.o.", "address": "PLAZY 115, Mladá Boleslav I, 29301"}, {"name": "Asig s.r.o.", "address": "Chrudimská 662/9, Čáslav-Nové Město, 28601"}, {"name": "Asig s.r.o.- pobočka Čáslav", "address": "Chrudimská 662/9, Čáslav-Nové Město, 28601"}, {"name": "Astotec Automotive Czech Republic s.r.o.", "address": "Brankovice 350, Brankovice, 68333"}, {"name": "AT CAR, s.r.o.", "address": "gen. Klapálka 2810, Kladno, 27201"}, {"name": "A-TEC servis s.r.o.", "address": "Příborská 2320, Frýdek Místek, 73801"}, {"name": "ATLANTA LOGISTIC, a.s.", "address": "Dyje 75, Znojmo, 66902"}, {"name": "ATM CZ a.s.", "address": "U měšťanského pivovaru 934, Praha 7 - Holešovice, 17000"}, {"name": "ATM CZ a.s.,Hradec Králové-kor.adresa", "address": "Klacovská 647, Hradec Králové, 50311"}, {"name": "AUDOPP s.r.o.", "address": "Tučapy 208, Tučapy, 68301"}, {"name": "AURINKO - DV s.r.o.", "address": "Úsilné 106, Úsilné, 37010"}, {"name": "Austin Detonator, s.r.o.", "address": "Jasenice 712, Vsetín 1, 75501"}, {"name": "AUTO HELUS s.r.o.", "address": "Luční 168/32, Severní Předměstí (část), 30100"}, {"name": "Auto Top Centrum Ostrava s.r.o.", "address": "Startovní 276/1, Ostrava - Hrabůvka, 70030"}, {"name": "AUTODOPRAVA Karel Rak s.r.o.", "address": "Klášterní 314, Teplá, 36461"}, {"name": "AUTODOPRAVA MIKY - Karel Miklovič", "address": "174, 431 43 Hrušovany, HRUŠOVANY U CHOMUTOVA, 43143"}, {"name": "Autodoprava Nový s. r. o.", "address": "Hejnice 627, Hejnice, 46362"}, {"name": "Autodoprava Nový s.r.o.", "address": "Hejnice 627, Hejnice, 46362"}, {"name": "AUTODOPRAVA VALLA s.r.o.", "address": "Poděbradova 287/111, Brno-Ponava, 61200"}, {"name": "Autoneum CZ s.r.o.", "address": "U Dvořiska 1721, Dvořisko, 56501"}, {"name": "Autoneum Pilsen s.r.o.", "address": "Stehlíkova ulice 1111, Rokycany, 33701"}, {"name": "AUTOTRASPORTI PARDUBICE s.r.o.", "address": "Jahnova 8, Zelené Předměstí, Pardubice, 53002"}, {"name": "AVE sběrné suroviny a.s.", "address": "Cvokařská 164/3, Plzeň 4 - Lobzy, 30100"}, {"name": "AVÍZO, a.s.", "address": "Slavíkova  6142/18d, Ostrava-Poruba x), 70800"}, {"name": "Avnet s.r.o.", "address": "V Olšinách 75/2300, Praha10-Strašnice, 10097"}, {"name": "AXEL GROUP s.r.o.", "address": "Žižkova 1595, Frýdlant nad Ostravicí, 73911"}, {"name": "AXITECH, s.r.o.-NEPOUŽÍVAT", "address": "17. listopadu 907, Frýdek Místek, 73801"}, {"name": "AŽD Praha s.r.o.", "address": "Žirovnická 3146/2, Praha 10 - Záběhlice, 10600"}, {"name": "AŽD Praha s.r.o., MZO Olomouc", "address": "Jiráskova 5, Olomouc, 77200"}, {"name": "AŽD Praha s.r.o., ZOZ Olomouc", "address": "Železniční 1, Olomouc, 77210"}, {"name": "B+J stavební s.r.o.", "address": "Ostravice 1272, Ostravice, 73914"}, {"name": "BAGROS, s. r. o.", "address": "Buchovcova 1668/4, Praha 3 - Žižkov, 13000"}, {"name": "BAGRSERVIS OSTRAVA s.r.o.", "address": "Holasova 1129/6, Ostrava-Hrabůvka x), 70030"}, {"name": "BACHL, spol. s r.o.", "address": "Evropská 669, Modřice, 66442"}, {"name": "BALKANCAR CZ s.r.o.", "address": "Ovocný trh 572/11, Nové Město, 11000"}, {"name": "Ball Beverage Packaging Czech Republic s.r.o.", "address": "Dýšina 292, Dýšina, 33002"}, {"name": "BANADO s.r.o.", "address": "K zahrádkám 991/13, Stodůlky, 15500"}, {"name": "BANADO s.r.o. - provozovna /korespondenční adresa/", "address": "Luleč 407, Luleč, 68303"}, {"name": "Barko, s.r.o.", "address": "Nádražní 598, Zastávka, 66484"}, {"name": "BASHOLZ, s.r.o.", "address": "Hollého 371/31, Žilina 1, 01001"}, {"name": "BAUHAUS k.s.", "address": "Strážní 852/7, Brno - Štýřice, 63900"}, {"name": "BAUHAUS k.s. - pobočka Brno Ivanovice", "address": "Strážní 852/7, Brno - Štýřic, 63900"}, {"name": "BAUHAUS k.s. - pobočka Brno Štýřice", "address": "Strážní 852/7, Brno - Štýřice, 63900"}, {"name": "BC LOGISTICS s.r.o.", "address": "Moravní 1636, Otrokovice, 76502"}, {"name": "Bc. Martin Langer", "address": "Vsetín, Lázky 603, Vsetín, 75501"}, {"name": "BDI Czech s.r.o. - Provozoovna Nový Jičín", "address": "Liberec - Liberec I-Staré Město, Sokolská 199/17, PSČ 46001, Liberec I-Staré Město, 46001"}, {"name": "Bečvanská lesní s.r.o.", "address": "Dolní Bečva 375, Dolní Bečva, 75655"}, {"name": "BEKAERT BOHUMÍN s.r.o.", "address": "Drátovenská 366, Bohumín-Pudlov x), 73551"}, {"name": "Belet a.s.", "address": "Dělnická 1253/37, Vejprty, 43191"}, {"name": "BELIT, spol. s r.o.", "address": "Sychrov 1047, Valašské Klobouky, 76601"}, {"name": "BE-SERVIS Group s.r.o.", "address": "Zbraslavecká 777, Kunštát, 67972"}, {"name": "Beskydbus Glembek s.r.o.", "address": "Kunčice pod Ondřejníkem 474, Kunčice pod Ondřejníkem, 73913"}, {"name": "Beskydská vodárenská s.r.o.", "address": "28. října 1872/114, Moravská Ostrava, 702 00 Ostrava, Moravská Ostrava (část), 70200"}, {"name": "Beskydský pivovárek, s.r.o.", "address": "č.p. 449, Ostravice, 73914"}, {"name": "BESORT team s.r.o.", "address": "Palackého 243, Valašské Meziříčí, 757 01"}, {"name": "BETA SPEDICE s.r.o.", "address": "Zahradní 1127, Lipník nad Bečvou, 75131"}, {"name": "BF international Sp. z o.o.", "address": "Aleja Zwycięstwa 96/98, GDYNIA, 81-451"}, {"name": "Bianco T.V.S., spol. s r.o.", "address": "Telečská čp. 7, Jihlava, 58601"}, {"name": "BIKE FUN International s.r.o.", "address": "Areál Tatry 1445/2, Kopřivnice, 74221"}, {"name": "BIOMASS PL Sp. z o.o.", "address": "Wolności 18/11B, BRZEG, 49-300"}, {"name": "Biuro Podróży Interglobus Tour Sp.j. Andrzej i Tomasz Bloch", "address": "Szczecińska 15B/8, Goleniów, 72-100"}, {"name": "BMTI ČR s.r.o.", "address": "Tovární 756/3, Brno-Chrlice, 62000"}, {"name": "BMTI ČR s.r.o. - Beroun", "address": "Lidická 802, Beroun-Město, 26601"}, {"name": "BO - IMPORT s.r.o.", "address": "Tyršova 1268/22, Olomouc, 77200"}, {"name": "BOGACZ DREW TOMASZ BOGACZ", "address": "KĘDZIERZYNKA 9, Stadniki, 32-422"}, {"name": "Bohdan Mílek", "address": "Zátiší 962, Orlová - Poruba, 73514"}, {"name": "Bohuslav Chlup autodoprava s.r.o.", "address": "Nádražní 1630/9A, Moravská Třebová - Předměstí, 57101"}, {"name": "BONATRANS GROUP a.s.", "address": "Revoluční 1234, Bohumín, 73954"}, {"name": "BOSÁK BUS, spol. s r.o.", "address": "Příbramská 1903, Dobříš, 26301"}, {"name": "BOUGELEN s.r.o.", "address": "Za humny 474/6, Křelov, 783 36 Křelov-Břuchotín, Křelov, 78336"}, {"name": "BPMC HOLDING a.s.", "address": "Výstavní 198/134, Vítkovice, 70300"}, {"name": "BPS Průmyslové Služby, s.r.o.", "address": "Suchdolské náměstí 1249/8, Praha 6-Suchdol, 16500"}, {"name": "BPS Průmyslové Služby, s.r.o. (akce Bonatrans)", "address": "Suchdolské náměstí 1249/8, Praha 6-Suchdol, 16500"}, {"name": "BPS Průmyslové Služby, s.r.o. (akce Electropoli Czech Republic, s.r.o.)", "address": "Suchdolské náměstí 1249/8, Praha 6-Suchdol, 16500"}, {"name": "BPS Průmyslové Služby, s.r.o. (akce Hanácká Kyselka)", "address": "Suchdolské náměstí 1249/8, Praha 6-Suchdol, 16500"}, {"name": "BPS Průmyslové Služby, s.r.o. (akce NEMAK)", "address": "Suchdolské náměstí 1249/8, Praha 6-Suchdol, 16500"}, {"name": "BPS Průmyslové Služby, s.r.o. (akce Plastic Omnium)", "address": "Suchdolské náměstí 1249/8, Praha 6-Suchdol, 16500"}, {"name": "Brose CZ, spol. s r.o. (Kopřivnice)", "address": "Průmyslový park 302, Kopřivnice, 74221"}, {"name": "Brose CZ, spol. s r.o. (Rožnov)", "address": "Průmyslový park 302, Kopřivnice, 74221"}, {"name": "BRUSH SEM s.r.o.", "address": "Edvarda Beneše 564/39, Plzeň 3-Doudlevce, 30100"}, {"name": "Břetislav Langa", "address": "Zahradní předměstí 411, Starý Bohumín, 735 81"}, {"name": "Břetislav Paseka", "address": "Ostravice 22, Ostravice, 73914"}, {"name": "BTL Moravia s.r.o.", "address": "Řecká 1107, Nehvizdy, 25081"}, {"name": "BV Spedice s.r.o.", "address": "Slévárenská 671, České Budějovice, 37001"}, {"name": "BZ doprava s.r.o.", "address": "Březiny 66, Březiny, 57201"}, {"name": "CA SVĚT s.r.o.", "address": "Jívanská 1855/22, Horní Počernice, 19300"}, {"name": "Cargo Motion s.r.o.", "address": "Těšínská 120/54, Slezská Ostrava, 71000"}, {"name": "Carrier Refrigeration Operation Czech Republic s.r.o. - Mýto", "address": "Lidická 323/18, Beroun-Závodí, 26601"}, {"name": "CBM Logistik s.r.o.", "address": "V. Talicha 1807/14,, České Budějovice 2 (část), 37005"}, {"name": "CELIO a.s.", "address": "V Růžodolu 2, Litvínov, 43514"}, {"name": "CELogis a.s.", "address": "Novoveská 1262/95, Ostrava-Mariánské Hory (část) x), 70200"}, {"name": "Celsa Huta Ostrowiec sp. z o.o.", "address": "Jana Samsonowicza 2, 27-400 OSTROWIEC ŚWIĘTOKRZYSKI"}, {"name": "Cemex Czech Republic s.r.o.", "address": "Plzeňská 3217/16, Smíchov (část), 15000"}, {"name": "Cemex Czech Republic s.r.o. (Morava)", "address": "Plzeňská 3217/16, Smíchov (část), 15000"}, {"name": "Cemex Logistics s.r.o.", "address": "Tovární 296, Prachovice, 538 04"}, {"name": "Cemex Sand  k.s.", "address": "Masarykovo nám. 207, Napajedla, 76361"}, {"name": "CENTROMAT s.r.o.", "address": "Lihovarská 685/42a, Ostrava-Kunčičky, 71800"}, {"name": "CENTRUM MORAVA AUTO, s.r.o.", "address": "Prchalov 78, Příbor, 74258"}, {"name": "CENTRUM Moravia Sever, spol. s r.o.", "address": "Ostrava - Vítkovice, Rudná 30/3, PSČ 70300, Vítkovice, 70300"}, {"name": "CETIN a.s.", "address": "Českomoravská 2510/19, Libeň (Praha 9), 19000"}, {"name": "Coca-Cola HBC Česko a Slovensko, s.r.o.", "address": "Českobrodská 1329, Praha 9 - Kyje, 19821"}, {"name": "CommScope Czech Republic s.r.o.", "address": "Tuřanka 856/98b, Brno-Tuřany, 62700"}, {"name": "Constellium Extrusions Děčín, s.r.o", "address": "Ústecká 751/37, Děčín V-Rozbělesy, 40502"}, {"name": "CONTI - RSC s.r.o.", "address": "Osvobození 123, Postřelmov, 78969"}, {"name": "Continental Automotive Czech Republic,s.r.o. - závod Brandýs", "address": "Hradecká 1092, Jičín, 50601"}, {"name": "Continental Automotive Czech Republic,s.r.o. - závod Brandýs II", "address": "Hradecká 1092, Jičín, 50601"}, {"name": "Continental Automotive Czech Republic,s.r.o. - závod Jičín", "address": "Hradecká 1092, Jičín, 50601"}, {"name": "Continental Barum s.r.o.", "address": "Objízdná 1628, Otrokovice, 76502"}, {"name": "Copeland Czech s.r.o.", "address": "K Vápence 1633/14, Mikulov, 69201"}, {"name": "Corex Sosnowiec sp. z o.o.", "address": "41-208 Sosnowiec"}, {"name": "CRYSTALEX CZ, s.r.o.", "address": "Masarykovo nábřeží 236/30, Praha 1 - Nové Město, 11000"}, {"name": "Cubinek, s.r.o.", "address": "Místecká 1120/103, Vítkovice, 70300"}, {"name": "CZ FERRO - STEEL, spol. s r.o.", "address": "2. května 1548, Napajedla, 76361"}, {"name": "CZ LOKO, a.s.", "address": "Semanínská 580, Česká Třebová, 56002"}, {"name": "CZAD Praha s.r.o.", "address": "Wilsonova č.p.300, Praha 2, 12000"}, {"name": "CZECH TRANS-LOGISTIK s. r. o.", "address": "Družstevní 1414, Hlinsko, 53901"}, {"name": "Czysty region Sp. z o.o.", "address": "Naftowa 7, 47-230 KĘDZIERZYN KOŹLE"}, {"name": "ČD Cargo, a.s.", "address": "Jankovcova 1569/2c, Praha 7 - Holešovice, 17000"}, {"name": "ČD Cargo, a.s.", "address": "Jankovcova 1569/2c, Praha 7 - Holešovice, 17000"}, {"name": "ČEPRO, a.s.", "address": "Dělnická č.p.213,č.or.12, Praha 7, 10600"}, {"name": "Čermák a Hrachovec a.s.", "address": "Smíchovská 31, Praha 5-Řeporyje, 15500"}, {"name": "Česká zbrojovka a.s.", "address": "Svat. Čecha 1283, Uherský Brod, 688 27"}, {"name": "České dráhy, a.s.", "address": "Nábřeží L.Svobody 1222, Praha 1 - Nové Město, 11000"}, {"name": "Českomoravská textilní s.r.o.", "address": "Černovická 619/13, Brno - Komárov, 61700"}, {"name": "DAF Trucks Praha, s.r.o.", "address": "Zděbradská 61, Jažlovice, 25101"}, {"name": "DAGROS, s.r.o.", "address": "K Přejezdu 509, Kostomlaty nad Labem, 28921"}, {"name": "DACHKOMPLET s.r.o.", "address": "Luční 943/47, Lišov, 37372"}, {"name": "Dalibor Škrobák", "address": "Zašová 514, Zašová, 75651"}, {"name": "DAV, a.s.", "address": "Zengrova 510/19, Ostrava-Vítkovice"}, {"name": "David Čáp", "address": "Dr. Nejedlého 270, Mochov"}, {"name": "David Hladký - ICETECHNIK.CZ", "address": "č.p. 133, Hostín u Vojkovic, Hostín u Vojkovic, 27744"}, {"name": "David Málek", "address": "Jáchymovská 336, Zliv, 373 44"}, {"name": "David Prokš", "address": "Bílanská 2380/59, Kroměříž, 76701"}, {"name": "David Zlotý", "address": "Ratibořská 76/27, Píšť, 74718"}, {"name": "DDLog s.r.o.", "address": "Palackého 701, Kardašova Řečice, 37821"}, {"name": "DEKAKOM plus s.r.o.", "address": "Václava Nového 1395, Rokycany, 33701"}, {"name": "De-Metal a.s.", "address": "Stromořadí 421, Uničov, 78391"}, {"name": "DEMONTA Trade SE", "address": "Železná 492/16, Brno - Horní Heršpice, 61900"}, {"name": "Denisa Routnerová", "address": "Na Borku 1610, Jirkov, 43111"}, {"name": "Devro, s.r.o.", "address": "Víchovská 830, Jilemnice, 51401"}, {"name": "DEZA, a. s.", "address": "Masarykova 753, Valašské Meziříčí, 75701"}, {"name": "DHL Freight CZ s.r.o.  (akce PO Rychvald)", "address": "Nádražní 2967/93, Moravská Ostrava, 702 00 Ostrava, Moravská Ostrava (část), 70200"}, {"name": "DHL Freight CZ s.r.o. - Česká Lípa  (akce Bombardier)", "address": "Nádražní 2967/93, Moravská Ostrava, 702 00 Ostrava, Moravská Ostrava (část), 70200"}, {"name": "DHL Freight CZ s.r.o. (akce Hanon)", "address": "Moravská Ostrava (část), 70200"}, {"name": "DHL Freight CZ s.r.o. (Akce PO Nový Jičín)", "address": "Nádražní 2967/93, Moravská Ostrava, 70200"}, {"name": "DHL Supply Chain CZ s.r.o.", "address": "Loděnická 963, Pohořelice, 69123"}, {"name": "DHL Supply Chain CZ s.r.o. (pobočka Syrovice)", "address": "Loděnická 963, Pohořelice, 69123"}, {"name": "Di Mihálik, s.r.o.", "address": "Jesenského 1089/11, Žilina 1, 01001"}, {"name": "Di Mihálik, s.r.o., odštěpný závod ČR", "address": "Jurečkova 643/20, Ostrava - Moravská Ostrava, 70200"}, {"name": "DIRLA s.r.o.", "address": "Nám. Osvobození 117, Hranice IV-Drahotuše, 75361"}, {"name": "DISKRA , spol. s r.o.", "address": "Nymburská 3374, Varnsdorf, 40747"}, {"name": "DNT Leszek Caputa", "address": "Przemysłowa 10, KATOWICE, 40-020"}, {"name": "Dofis s.r.o.", "address": "Slaměníkova 1051/27a, Brno - Maloměřice, 61400"}, {"name": "DOMEG & V s.r.o.", "address": "Luleč 419, Luleč, 68303"}, {"name": "Doosan Škoda Power a.s.", "address": "Tylova 1/57, Plzeň 3-Jižní Předměstí, 30128"}, {"name": "Doosan Škoda Power a.s. - Jeřáby", "address": "Tylova 1/57, Plzeň 3-Jižní Předměstí, 30128"}, {"name": "DOPRASPED s.r.o.", "address": "Malý Koloredov 811, Frýdek Místek, 73801"}, {"name": "Doprava a mechanizace a.s.", "address": "Emilova 1228/9, Plzeň 3-Skvrňany (část) x), 30100"}, {"name": "DOPRAVA SILNICE, spol. s r.o.", "address": "U Lihovaru čp. 522, Černá Hora, 67921"}, {"name": "DOPRAVAPERNICKÝ s.r.o.", "address": "Lhotka nad Bečvou 94, Lešná, 75641"}, {"name": "Dopravní zdravotní služba Náchod s.r.o.", "address": "Bartoňova 951, Náchod, 54701"}, {"name": "DPOV, a.s. - Akce GX Store", "address": "Husova 635/1b, Přerov, 75152"}, {"name": "DRAXTON BRNO s.r.o.", "address": "Vodařská 108/15, Brno, 61900"}, {"name": "Drylock Technologies s.r.o.", "address": "Vlámská 801, Hrádek nad Nisou, 46334"}, {"name": "DŘEVO TRANSPORT, s.r.o.", "address": "Na Březince 1368/5, Praha 5 - Smíchov, 15000"}, {"name": "DŘEVOTVAR BYSTRÉ, spol. s r.o.", "address": "Na drahách 374, Bystré, 56992"}, {"name": "Dřevozpracující družstvo", "address": "LUKAVEC 9, Lukavec, 39426"}, {"name": "DS Transport Beton s.r.o.", "address": "Libštát 169, Libštát, 51203"}, {"name": "DSO - TRADE s.r.o.", "address": "Svitavská 500/7, Blansko, 67801"}, {"name": "DTS Vrbenský, a.s.", "address": "Souš čp. 7, Most, 43403"}, {"name": "Duslo, a.s.", "address": "Administratívna budova, ev.č. 1236, Šala 1, 92701"}, {"name": "E S B a.s.", "address": "Tušimice 10, Kadaň, 43201"}, {"name": "E.H.P., s.r.o.", "address": "Na Nivách 29, Praha 4 - Michle, 14000"}, {"name": "E.H.P., s.r.o. (Akce Hyundai Glovis)", "address": "Na Nivách 29, Praha 4 - Michle, 14000"}, {"name": "E.H.P., s.r.o. (Akce PKP Ostrava)", "address": "Na Nivách 29, Praha 4 - Michle, 14000"}, {"name": "Ecco Wood Sp. z o.o.", "address": "Chorzowska 6, Katowice, 40-101"}, {"name": "ECLIPSERA s.r.o.", "address": "Termesivy 41, Havlíčkův Brod, 58001"}, {"name": "ECONOMICUS s.r.o.", "address": "Růžová 7, Jindřichův Hradec, 37701"}, {"name": "Ecopal s.r.o. - lesovozy", "address": "Libřice 31, 503 44 Libřice, 50344"}, {"name": "Eduard Oslejšek", "address": "Lískovec 410, Frýdek, 73801"}, {"name": "Eduard Šuranský", "address": "Brdičkova 1916/11, Praha 13 - Stodůlky, 155 00"}, {"name": "Edwards, s.r.o.", "address": "Jana Sigmunda 300, Lutín, 78349"}, {"name": "EFG CZ spol. s r.o.", "address": "Zelený pruh 1560/99, Braník (část), 14000"}, {"name": "EKIS, spol. s r.o.", "address": "Náchodská 2421, Praha 9 - Horní Počernice, 19300"}, {"name": "EKO Logistics s.r.o.", "address": "Tyršova 68, Týnec nad Labem, 28126"}, {"name": "EKOLA České Libchavy s.r.o.", "address": "České Libchavy 172, České Libchavy, 56114"}, {"name": "EKOLTES Hranice, a.s.", "address": "Zborovská 606, Hranice I - Město, 75301"}, {"name": "EKOOL - WAY s.r.o.", "address": "Prokopa Velikého 572, Domažlice-Týnské předměstí, 344 01"}, {"name": "EKOREMA recycling s.r.o.", "address": "B. Němcové 1720, Rožnov pod Radhoštěm, 75661"}, {"name": "EKOSTAVBY HZ a.s.", "address": "Za Podjezdem 437/2, Jeseník - Bukovice, 79001"}, {"name": "EKOSTAVBY Louny s.r.o.", "address": "Václava Majera 573, Louny, 44001"}, {"name": "EKOSTAVBY Louny s.r.o. - Soukromá vozidla", "address": "Václava Majera 573, Louny, 44001"}, {"name": "ELECTROPOLI Czech Republic, s.r.o.", "address": "Budovatelů 482, Třemošnice, 53843"}, {"name": "Elektrometall, s.r.o.", "address": "Ke Kasárnům 730/9, Mariánské Lázně, 35301"}, {"name": "ELKO EP, s.r.o.", "address": "Palackého 493, Všetuly, 76901"}, {"name": "Elmoz Czech, s.r.o.", "address": "Černoleská 2326, Benešov, 25601"}, {"name": "EM TRUCK CZ s.r.o.", "address": "Příborská 1494, Frýdek Místek, 73801"}, {"name": "EMERGE, a.s.", "address": "Bezděčín 130, Mladá Boleslav, 29301"}, {"name": "EMERGE, a.s. (pobočka Liberec)", "address": "Bezděčín 130, Mladá Boleslav, 29301"}, {"name": "ENERGIE Holding a.s.", "address": "Kačírkova 982/4, Jinonice (Praha 5) (část), 15800"}, {"name": "ENGAS s.r.o.", "address": "Slaměníkova 1051/27a, Brno – Maloměřice, 61400"}, {"name": "Engel strojírenská, spol. s r.o.", "address": "Českobudějovická 314, Kaplice, 38241"}, {"name": "ENRESS s.r.o.", "address": "V zářezu 902/4, Jinonice, 15800"}, {"name": "ENVIROPOL s.r.o.", "address": "Československého exilu 2062/8, Modřany (část), 14200"}, {"name": "EPP Sp. z o.o. (Dolnyśląsk)", "address": "Ul. Polna 22, Jelcz-Laskowice?, DOLNOŚLĄSKIE, 55-220"}, {"name": "ESAB CZ, s.r.o. - horní závod", "address": "Smetanovo nábřeží 334, Vamberk, 51754"}, {"name": "ESAB CZ, s.r.o., člen koncernu", "address": "Smetanovo nábřeží 334, Vamberk, 51754"}, {"name": "EURO TRADE GRZEGORZ CHOJECKI", "address": "Jana Brzechwy 26, Rawa Mazowiecka, 96-200"}, {"name": "EUROLIFT CZ s.r.o.", "address": "5. května 2629, Dvůr Králové nad Labem, 54401"}, {"name": "Europejskie Centrum Owocowe Sp. z o.o.", "address": "Rębowola 55A, 05-622 Belsk Duży, Rębowola 55A, 05-622 Belsk Duży"}, {"name": "EUROTEAM, s.r.o.", "address": "Mezibořská 764, Litvínov-Horní Litvínov, 43601"}, {"name": "EuWe Eugen Wexler ČR, s.r.o.", "address": "Kotelská 1109, Nové Město (část), 33703"}, {"name": "EWM HIGHTEC WELDING s.r.o.", "address": "9. května 718/31, Starý Jiříkov, 40753"}, {"name": "EXPERIENS s.r.o - dlužník", "address": "Jednořadá 1051/53, Praha 6-Bubeneč, 16000"}, {"name": "Express Group, a.s.", "address": "Plynárenská 7/B, Bratislava, 82109"}, {"name": "Extral Sp. z o.o.", "address": "Wygody 2, 44-240 ŻORY"}, {"name": "F.H.U SLAV", "address": "Pawia 3,, Tarnowskie Góry, 42-600"}, {"name": "F.H.U. MITO-DREW BARTŁOMIEJ SITNIK", "address": "GLINIK DOLNY 186T, FRYSZTAK, 38-130"}, {"name": "F.H.U. Trade-Trans Justyna Sypuła", "address": "Górna 27, Rawa Mazowiecka, 96-200"}, {"name": "F.H.U.MARECKI Marek Matuszyk", "address": "WOJTOWA 457, 38-305 LIPNIKI, LIPNIKI, 38-305"}, {"name": "F.H.U.T. \"STUDZIŃSKI\" PIOTR STUDZIŃSKI", "address": "Bilsko 193, ŁOSOSINA DOLNA, 33-314"}, {"name": "F.P.U.H. Jerzy Szyszka", "address": "Gola 9a, 63-640 BRALIN"}, {"name": "F.T.H i P DREW-TRANS", "address": "Bukowsko 183, Bukowsko, 38-505"}, {"name": "F.U. DREW - POL Andrzej Giefert", "address": "Średnia Wieś 100, 38-604 HOCZEW"}, {"name": "F.X. Meiller Slaný, s.r.o.", "address": "Netovická 386, Slaný, 27401"}, {"name": "FELIX Austria GmbH", "address": "Felixstraße 24 7210 Mattersburg, Österreich, 7210"}, {"name": "Ferdinand Koiš - Lesovozy", "address": "Ke Studánce 296, PSČ 73514, Lutyně, 73514"}, {"name": "FERMIER s.r.o.", "address": "K Hájům 946/10, Praha 5 - Stodůlky, 15500"}, {"name": "FERRMON, spol. s r.o.", "address": "Lešetínská 701/47, Ostrava - Kunčice, 71900"}, {"name": "FFB Förder- und Hebezeuge Service", "address": "Im Weidengrund 18-20, D-74246, Eberstadt"}, {"name": "FHU WEIRAUCH", "address": "RYBNIKCA 184, Orzesze, 43-180"}, {"name": "FIA ProTeam, s.r.o.", "address": "Matějkova 1992, Pelhřimov, 39301"}, {"name": "Filip Boháč", "address": "Záhumení 626, Vřesina, 74285"}, {"name": "Filip Horáček", "address": "Dlouhá 364/98, Stará Ves, 79501"}, {"name": "Filip Kočí", "address": "Horní Tošanovice 194, Horní Tošanovice, 73953"}, {"name": "Filip Vajc", "address": "V Edenu 234, Slavětín, 43909"}, {"name": "Firma Oskar - Damian Gac", "address": "Osiedlowa 59, Nowosielce, 38-350"}, {"name": "FISAD s.r.o.", "address": "Chomutovská 643, Jirkov, 43111"}, {"name": "FK servis s.r.o.", "address": "Libušín, Přemyslova 745, Libušín, 27306"}, {"name": "Flenexa plus s.r.o.", "address": "Přáslavice 335, Přáslavice, 78354"}, {"name": "FONTEA a.s.", "address": "Veselí nad Lužnicí I 596, Veselí nad Lužnicí I, 39181"}, {"name": "Food Service Sp. z o.o.", "address": "Mszczonowska 35a, Rawa Mazowiecka, 96-200"}, {"name": "FORBET moravia s.r.o.", "address": "Spytihněv 411, Spytihněv, 76364"}, {"name": "Forest Service Czech s.r.o.", "address": "Široký Brod 64, Široký Brod, 79084"}, {"name": "Forester Kft.", "address": "Elekfy Jenő u. 8, H-2022 TAHITÓTFALU, 00000"}, {"name": "FORESTER s.r.o.", "address": "Libchyně 51, Libchyně, 54901"}, {"name": "FORESTRUCK s.r.o.", "address": "Štramberská 2878, Vítkovice, Ostrava, 70300"}, {"name": "FORESTTRANS spol. s r.o.", "address": "Rybná 1278/14, Kraslice, 35801"}, {"name": "FORMANS TRUCKS s.r.o.", "address": "Papírenská 720, Paskov, 73921"}, {"name": "Format44 s.r.o.", "address": "Dlouhá 3403/2b, Ostrava - Moravská Ostrava, 702 00"}, {"name": "FOS OPAVA, s.r.o.", "address": "Na Nové 40/7, Opava - Komárovské Chaloupky, 747 06"}, {"name": "FRANCIS veřejná obchodní společnost", "address": "Záhoří 10, Semily, 51301"}, {"name": "František Baslík", "address": "Zahradní 212, MALÉ ŽERNOSEKY_x000D_\n - LOVOSICE 2, 410 02"}, {"name": "František Gistr", "address": "Družstevní 4295, Zlín (část), 76005"}, {"name": "František Kubásek", "address": "Páleč 86, Páleč, 27371"}, {"name": "František Luža", "address": "Lovčice 2, Lovčice, 69639"}, {"name": "František Mikulenka", "address": "Hutisko-Solanec - Solanec pod Soláněm 46, PSČ 75662, Hutisko-Solanec, 75662"}, {"name": "František Novák", "address": "Pražského povstání 1950, Benešov, 256 01"}, {"name": "František Pavlík", "address": "Krahulov 85, Krahulov, 67521"}, {"name": "František Pitour", "address": "Zelenohorská 499/31, Praha 8 - Bohnice, 181 00"}, {"name": "František Podešva", "address": "Velké Karlovice 525, Velké Karlovice, 75606"}, {"name": "František Studýnka", "address": "U pošty 279/5, Brno - Starý Lískovec, 602 00"}, {"name": "František Zemánek", "address": "Mnichov 23, Vrbno pod Pradědem, 79326"}, {"name": "FRCOTRA s.r.o.", "address": "Mikulůvka 331, Mikulůvka, 75624"}, {"name": "Frenwood s.r.o.", "address": "Luční 1210/20, Ostrava-Svinov, 72100"}, {"name": "FRUJO, a.s.", "address": "Tvrdonice 710, Tvrdonice, 69153"}, {"name": "FRUTA Podivín,a.s.", "address": "Rybáře 157/40, Podivín, 69145"}, {"name": "FTE automotive Czechia, s.r.o", "address": "HLUBANY 124, Podbořany, 44101"}, {"name": "F-TRANS s.r.o.", "address": "Kuldova 754/6, Brno-Zábrdovice (část) x), 61500"}, {"name": "G&P SERVIS MORAVA s.r.o.", "address": "Místecká 1035, Paskov, 73921"}, {"name": "G&P SERVIS MORAVA s.r.o. (Akce Hyundai Glovis)", "address": "Místecká 1035, Paskov, 73921"}, {"name": "G&P SERVIS MORAVA s.r.o. (Akce Hyundai Mobis)", "address": "Místecká 1035, Paskov, 73921"}, {"name": "G&P SERVIS MORAVA s.r.o. (Akce Sejong)", "address": "Místecká 1035, Paskov, 73921"}, {"name": "GALVA TRANS, s.r.o.", "address": "Na Trávníku 414, Držovice, 79607"}, {"name": "GARANTRANS s.r.o.", "address": "Lihovarská 1199/10, Radvanice, 71600"}, {"name": "GARDEN Logistic s.r.o.", "address": "Hlucká 17, Dolní Němčí, 68762"}, {"name": "Gas Zvolen s. r. o.", "address": "Pribinova 738/73, Zvolen 1, 96001"}, {"name": "GASPED spol. s r.o.", "address": "Domoradice 301, Domoradice, 38101"}, {"name": "Gekkon International s.r.o.", "address": "Milheimova 2915, Zelené Předměstí, Pardubice, 53002"}, {"name": "Gekkon International s.r.o. (Akce AGC)", "address": "Milheimova 2915, Pardubice - Zelené Předměstí, 530 02"}, {"name": "GEMO a.s.", "address": "Dlouhá 562/22, Olomouc - Lazce, 77235"}, {"name": "GeoWorks s.r.o.", "address": "Tovární 1738/34, Ústí nad Labem, 40001"}, {"name": "Gerresheimer Horsovsky Tyn spol. s r.o.", "address": "Zahradní 282, Horšovský Týn, 34601"}, {"name": "GESTAMP LOUNY s.r.o.", "address": "Průmyslová zóna Triangle 61, Velemyšleves, 43801"}, {"name": "GIRAFFE BUILDINGS s.r.o.", "address": "Vídeňská 255/42, Brno, Štýřice, 63900"}, {"name": "GLEDICIA KFT", "address": "FOUT 79, Ladánybene, 6048"}, {"name": "GLOBEX stroje s.r.o.", "address": "Revoluční 1082/8, Nové Město (Praha 1), 110 00 Praha, Praha - 1, 11000"}, {"name": "GLOBUS ČR, v.o.s.", "address": "Kostelecká 822/75, Praha 9-Čakovice, 19600"}, {"name": "Goldwings, s.r.o", "address": "Sacharovova 3151/20, Hodonín, 69501"}, {"name": "Green spot, s.r.o.", "address": "Nadjezdová 608/37, Štěpánov, 78313"}, {"name": "greiner assistec s.r.o.", "address": "Březová 181, Březová, 76315"}, {"name": "GRENT - Žváček s.r.o.", "address": "Šumperk - Chromeč 40, Zábřeh, 78901"}, {"name": "GROBELAR s.r.o.", "address": "Teslova 1129/2b, Ostrava Přívoz, 702 00"}, {"name": "GRUPO ANTOLIN TURNOV, s.r.o", "address": "Průmyslová 3000, Turnov, 51101"}, {"name": "GUMOTEX Automotive Jaroměř s.r.o.", "address": "V Lužinách 113, Jaroměř, Pražské Předměstí, 55101"}, {"name": "Gumotex, a.s.", "address": "Mládežnická 3062/3a, Břeclav, 69075"}, {"name": "GUTRA s.r.o.", "address": "Dělnická 15, Most - Velebudice, 43401"}, {"name": "Gwarant Janusz Demarczyk", "address": "Zagórska 133, Tarnowskie Góry, 42-680"}, {"name": "GX CORPFIN, a.s.", "address": "Pelclova 2500/5, Ostrava - Moravská Ostrava, 70200"}, {"name": "HÁJEK a SYNOVÉ, a.s.", "address": "Sportovní 148, Jakubčovice nad Odrou, 74236"}, {"name": "Halenda group s. r. o.", "address": "Královice 93, Slaný, 27401"}, {"name": "HANÁ TRANS, s. r. o.", "address": "Legionářská 115, Brodek u Prostějova, 79807"}, {"name": "Hanon Systems Autopal s.r.o.", "address": "Lužická 984/14, Nový Jičín, 74101"}, {"name": "HARD CONSTRUCTION s.r.o.", "address": "Na Zbytkách č.83, Frýdek Místek, 73801"}, {"name": "HARTMANN - RICO, a.s.", "address": "Masarykovo nám. 77, Veverská Bítýška, 66471"}, {"name": "HARUDA s.r.o.", "address": "Palackého 701, Kardašova Řečice, 37821"}, {"name": "HAUK s.r.o.", "address": "Mírová 155, Velká Ledhuje, 54954"}, {"name": "HAUSER spol. s r.o.", "address": "Kamarytova 2848/2, České Budějovice 5 (část), 37006"}, {"name": "Heat Transfer Systems, s.r.o.", "address": "Novosedly na Moravě 238, Novosedly, 69182"}, {"name": "Heineken Česká republika, a. s.", "address": "U Pivovaru 1, Krušovice, 27053"}, {"name": "HELIOS MORAVIA s.r.o.", "address": "Třeština 125, Třeština, 78973"}, {"name": "Hella Autotechnik Nova, s.r.o.", "address": "Družstevní 338/16, Mohelnice, 78985"}, {"name": "HELUZ cihlářský průmysl a. s.", "address": "U Cihelny 295, Dolní Bukovsko, 37365"}, {"name": "HELUZ cihlářský průmysl v.o.s. - Hevlín", "address": "Dolní Bukovsko čp. 295, Dolní Bukovsko, 37365"}, {"name": "HENGSTBERGER s.r.o.", "address": "Hamr 139, Suchdol nad Lužnicí, 37806"}, {"name": "Henniges Hranice, s.r.o", "address": "Olomoucká 306, Hranice I-Město, 753 01 Hranice, Hranice I-Město, 75301"}, {"name": "HERKUL a.s.", "address": "Průmyslová 228, Obrnice, 435 21"}, {"name": "Hermes Fulfilment CZ s.r.o.", "address": "Komenského 598, Šťáhlavy, 33203"}, {"name": "HESTI, spol. s r. o.", "address": "K Hájům 946/10, Praha 5 - Stodůlky, 15500"}, {"name": "Hlawiczka bus s.r.o.", "address": "Vendryně 911, Vendryně, 73994"}, {"name": "HOBL & PECH, s. r. o.", "address": "Na Vršíčkách 7, Plzeň - Jižní Předměstí, 30100"}, {"name": "HOKS s.r.o.", "address": "V Pivovaře 111, Brodek u Prostějova, 79807"}, {"name": "HOLCNER - DOPRAVA s.r.o.", "address": "Štěchov 37, Lysice, 67971"}, {"name": "HORSEM TRANS s.r.o.", "address": "Hněvotínská 1189/58, Olomouc - Nová Ulice, 77900"}, {"name": "HOYER POLSKA Sp. z o.o.", "address": "Roździeńska 41, KATOWICE, 40-382"}, {"name": "HP-Pelzer s.r.o.- odštěpný závod Ostrava", "address": "Radčice, Pod Kyjovem 349/18, Plzeň-Radčice x), 32200"}, {"name": "Hranická lesní, a.s.", "address": "Boňkov 133, Olšovec, 75301"}, {"name": "HRC s.r.o.", "address": "Příborská 1494, Frýdek-Místek, 738 01"}, {"name": "HRR klub v AČR", "address": "Sedliště 141, 739 36 Sedliště, Sedliště, 73936"}, {"name": "HTP Ostrava, a.s.", "address": "Mošnov 374, Mošnov, 74251"}, {"name": "Hurtownia Olejów i Paliw Olkop Gabriel Kropkowski", "address": "Frydrychowo 54, Frydrychowo, 87-410"}, {"name": "Husqvarna Manufacturing CZ, s.r.o.", "address": "Jesenická 146, Vrbno pod Pradědem, 79326"}, {"name": "Hydro Extrusion Poland sp. z o.o", "address": "Ul.Graniczna 64/66, 93-428 ŁÓDZ"}, {"name": "Hydrospol s.r.o.", "address": "Staré Město u Bruntálu 58, Staré Město, 79333"}, {"name": "HYDROSPOR spol.s r.o.", "address": "Úprkova 966/3, Ostrava-Přívoz, 70200"}, {"name": "HYSTER CZ a.s.", "address": "Hulínská 3445/5, Kroměříž, 76701"}, {"name": "Hyundai Glovis Czech Republic s.r.o.", "address": "tř. T.G.Masaryka 1108, Frýdek Místek, 73801"}, {"name": "Hyundai Motor Manufacturing Czech s.r.o.", "address": "Nižní Lhoty - Průmyslová zóna Nošovice, Nižní Lhoty, 73951"}, {"name": "Hyundai Motor Manufacturing Czech s.r.o. - Go Tracker", "address": "Nižní Lhoty - Průmyslová zóna Nošovice, Nižní Lhoty, 73951"}, {"name": "Hyundai Transys Czech, s.r.o.", "address": "Hyundai 700/3, Nošovice, 73951"}, {"name": "CHB LOGISTICS s.r.o.", "address": "Spartakovců 6014/3, Ostrava-Poruba x), 70800"}, {"name": "CHRIST CAR WASH s.r.o.", "address": "Koterov, Koterovská 534/175, Plzeň 2-Slovany - Východní Předměstí, 32600"}, {"name": "ICF PALIWA Sp. z.o.o", "address": "1, Wyżne, 38-120 Czudec, Polska, Czudec"}, {"name": "ignis s.r.o.", "address": "Nám. Prokopa Velikého 11/6, Ústí nad Labem, 40001"}, {"name": "IMOS group, s.r.o.", "address": "Na Kampě 515/8, Praha 1 - Malá Strana, 11800"}, {"name": "IMOS invest s.r.o.", "address": "Tečovice 349, Zlín, 76302"}, {"name": "IMPULS-Leasing-AUSTRIA s.r.o.", "address": "Dlouhá 733/29, Praha 1, 11000"}, {"name": "InfinityMedical s.r.o.", "address": "Martinovská 3168/48,, Ostrava - Martinov, 72300"}, {"name": "Ing. Alexandr Kučera", "address": "Pavlínka 18/9a, 78401 Litovel, Litovel (část), 78401"}, {"name": "Ing. Jan Píšek", "address": "Mexická 536, Karolinka, 75605"}, {"name": "Ing. Ĺuboš Krovický", "address": "Masarova 2085/5, Brno-Líšeň, 628 00"}, {"name": "Ing. Olga Krčmářová", "address": "Velká Skrovnice 43, Ústí nad Orlicí (část), 56201"}, {"name": "Ing.Vít Báča", "address": "Hrubínova 530, Polička-Město, 57201"}, {"name": "INTER PAN s.r.o.", "address": "Kolaříkova 1364, Valašské Meziříčí, 75701"}, {"name": "INTERKAMION PRAHA s.r.o.", "address": "Sokolovská 231/35, Praha 8-Karlín, 18600"}, {"name": "INTERNO Sp. z o.o.", "address": "Wielka Lipa 72, OBORNIKI ŚLĄSKIE, 55-120"}, {"name": "IP Systém a.s.", "address": "U panelárny 573/3, Olomouc, 77200"}, {"name": "IPMS Brand Services s.r.o.", "address": "Jablunkovská 406, Třinec - Staré Město, 73961"}, {"name": "IR.Construction s.r.o.", "address": "Drážďanská 856/74B, Krásné Březno, Ústí nad Labem, 40007"}, {"name": "ISOTHERM s.r.o.", "address": "Linecká 646, Kaplice, 38241"}, {"name": "IS-POLSKA Sp. z o.o.", "address": "Wrocławska 26a, JAWOR, 59-400"}, {"name": "ITT Holdings Czech Republic, s.r.o.", "address": "Na Rovince 913, Ostrava - Hrabová x), 72000"}, {"name": "ITW Pronovia, s.r.o.", "address": "Vlkovská 595, Velká Bíteš, 59501"}, {"name": "Ivan Lokota", "address": "Šonov u Nového Města nad Metují 151, Provodov-Šonov, 54908"}, {"name": "Iveco Czech Republic, a. s. - Sklad náhradních dílů", "address": "Dobrovského 74/II, Vysoké Mýto-Město, 56601"}, {"name": "Ivo Hanzlík", "address": "Bratislavská 868/17, Hustopeče, 69301"}, {"name": "Ivo Mihal", "address": "Pod Sádkama 1552, HLUK, 687 25"}, {"name": "Ivo Pokorný", "address": "Nové dvory-Hlíny 3666, Frýdek Místek, 73801"}, {"name": "Ivo Staněk", "address": "Opava - Vávrovice, Mlynářská 261/8, PSČ 74707, Vávrovice (část), 74707"}, {"name": "J.P. PLAST, s.r.o.", "address": "Svatoborská 988/45, Kyjov, 69701"}, {"name": "JABLOTRON a.s.", "address": "Pod Skalkou 4567/33, Jablonec nad Nisou, 46601"}, {"name": "Jacek Wieczorek Zakład Usługowy Konserwacja Terenów Zielonych", "address": "ul. Władysława Łokietka 4, BYTOM, 41-933"}, {"name": "JACOM, spol. s r.o.", "address": "Přerovská 761/2, Holešov, 76901"}, {"name": "Jakub Vojtěch", "address": "Formankova  522, Nový Hradec Králové (část), 50011"}, {"name": "Jan Cielecký", "address": "Sedliště 326, Sedliště, 73936"}, {"name": "Jan Dolenský - AUTODOPRAVA s.r.o.", "address": "Pěnčín 67, Pěnčín, 46821"}, {"name": "Jan Holešovský", "address": "Nebovidská 45, Střelice, 66447"}, {"name": "Jan Klasz", "address": "U Lesa 707, Osek, 41705"}, {"name": "Jan Kloub", "address": "Dalimilova 2739, Louny, 44001"}, {"name": "Jan Procházka", "address": "Chvaletice 56, Protivín, 39701"}, {"name": "Jan Smrček, s.r.o.", "address": "Velká nad Veličkou 958, Velká nad Veličkou, 69674"}, {"name": "Jan Surý", "address": "Hošťálková 236, Hošťálková, 75622"}, {"name": "Jan Trlica", "address": "Litultovice 205, Litultovice, 74755"}, {"name": "JANKOSTAV s.r.o.", "address": "Štěpaňákova 714/31, Ostrava-Kunčice, 71900"}, {"name": "Jarmila Hanzlová - Komfort Taxi", "address": "Na Kopci 2367/70, 73401, Karviná-Mizerov (část) x), 73401"}, {"name": "Jaroslav Bláha", "address": "Na Vršku 42, Třebotov, 252 26"}, {"name": "Jaroslav Jiroušek", "address": "Bukovany 42, Bukovany, okr. Benešov, 25741"}, {"name": "Jaroslav Kovář", "address": "Ostrava - Nová Bělá, Krmelínská 634/363, PSČ 72400, Stará Bělá (část), 72400"}, {"name": "Jaroslav Kubát", "address": "Nerudova 900, Dvůr Králové nad Labem, 54401"}, {"name": "Jaroslav Macháč - Lesovozy", "address": "Valašské Klobouky, Luční 913, PSČ 76601, Valašské Klobouky, 76601"}, {"name": "Jaroslav Pazdera", "address": "Na Letné 797, Velká Bystřice, 78353"}, {"name": "Jaroslav Rejman", "address": "Hrušová 147, Vysoké Mýto-Město, 56601"}, {"name": "Jaroslav Siarka", "address": "Ondřejovice 9, Zlaté Hory, 79376"}, {"name": "Jaroslav Štrébl", "address": "Švermova 321, Březno, 43145"}, {"name": "Jaroslav Šula", "address": "Bukovice 65, Štíty, 78991"}, {"name": "Jaruška Maňásková, s.r.o.", "address": "Srlín 50, Srlín, 39843"}, {"name": "Javůrek CZ s.r.o.", "address": "Horní Libchavy 59, Libchavy, 56116"}, {"name": "JC TRANS, s.r.o.", "address": "Štramberská 2872, Ostrava - Vítkovice, Ostrava-Vítkovice, 70030"}, {"name": "Jelena Blahetková - Taxi", "address": "U Lesa 730/1, Karviná, Ráj, 73401"}, {"name": "JEŘÁBY BESTA s.r.o.", "address": "Na Zbytkách 83, Frýdek-Místek, Staré Město, 73801"}, {"name": "JIMIK s.r.o.", "address": "Lipovská 1207/87, Jeseník, 79001"}, {"name": "Jindřich Grycman", "address": "Ořechovka 355, Zlín - Štípa, 763 14"}, {"name": "Jindřich Hegr", "address": "Joklova 115/11, Křečkovice, 68201"}, {"name": "Jindřich Jiránek - ZSD", "address": "Hrobce 64, Hrobce, 41183"}, {"name": "Jiří Boček", "address": "Na Větrníku 1611/6, Břevnov (Praha 6) (část), 16200"}, {"name": "Jiří Brabec", "address": "Karlov 356, Nová Včelnice, 37842"}, {"name": "Jiří Burian", "address": "Na řečišti 334, Sviadnov, 739 25"}, {"name": "Jiří Doležel", "address": "Souhrady 58, Fryšták, 76316"}, {"name": "Jiří Dvořák", "address": "Číměř 61, Číměř, 37832"}, {"name": "Jiří Hanuš", "address": "Žufanova 1098/4, Praha 17 - Řepy, 163 00"}, {"name": "Jiří HENDRYCH", "address": "U Hřbitova 328, Loděnice, 26712"}, {"name": "Jiří Jíša", "address": "Opatovice 97, Vyškov, 68201"}, {"name": "Jiří Malucha - Komfort taxi", "address": "Čs. armády 1052, Bohumín - Nový Bohumín, 73581"}, {"name": "Jiří Ondruš - Komfort taxi", "address": "Matěje Kopeckého 606/22, Ostrava - Poruba, 70800"}, {"name": "Jiří Suja", "address": "Horní 128, Hluboká nad Vltavou, 37341"}, {"name": "Jiří Šidlo", "address": "Dobřínsko 152, Dobřínsko, 67201"}, {"name": "Jiří Tichý", "address": "Smilov 48, Štoky, 582 53"}, {"name": "Jiří Vávra", "address": "Rychnov na Moravě 110, Rychnov na Moravě, 56934"}, {"name": "JMG mix s.r.o.", "address": "K Farmě 606, Zlín - Štípa, 76314"}, {"name": "Josef Binar", "address": "Skřipov 195, Skřipov, 74745"}, {"name": "Josef Holčík", "address": "VELKÁ NAD VELIČKOU 22, Velká nad Veličkou, 69674"}, {"name": "Josef Kozák - TOUR", "address": "Hlučínská 41, Dolní Benešov, 74722"}, {"name": "Josef Přinda", "address": "Čerňovice E225, Čerňovice, 33036"}, {"name": "Josef Ryba", "address": "Preissigovo nám. 13, Světec, 41753"}, {"name": "Josef Skočdopol", "address": "Hořátev 275, ZVĚŘÍNEK, 289 13"}, {"name": "Josef Šandor", "address": "Skalice 166, Hostěradice, 67171"}, {"name": "Josef Šustr", "address": "Vysoké Březno 18, Malé Březno, 43401"}, {"name": "JOST Polska Sp. z o.o.", "address": "Motoryzacyjna 6, NOWA SÓL, 67-100"}, {"name": "Joyson Safety Systems Czech s.r.o.", "address": "Na Ohradech 264, Rtyně v Podkrkonoší, 54233"}, {"name": "Joyson Safety Systems Czech s.r.o., II.", "address": "Na Ohradech 264, Rtyně v Podkrkonoší, 54233"}, {"name": "Jozef Mázik", "address": "Palackého 56, Nechanice, 50315"}, {"name": "JUBAR PLUS CZ, s.r.o.", "address": "Pavlovova 3048/40, Ostrava-jih-Zábřeh, 70030"}, {"name": "Jungheinrich (ČR) s.r.o.", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o.  (akce EWM)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Barum)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Edwards)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce EMERGE)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Hanon)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (Akce Hyundai Transys)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce ITT)", "address": "Modletice (část), 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Iveco)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Lactalis)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce LEGO)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (Akce Logaritma)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Mignen)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Mölnlycke Health Care Havířov)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Pepsico)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Promens)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Siemens)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce Spur)", "address": "Modletice 101, Říčany, 25101"}, {"name": "Jungheinrich (ČR) s.r.o. (akce TRCZ)", "address": "Modletice 101, Říčany, 25101"}, {"name": "JUROX TRANS s.r.o.", "address": "Školní 140/30, Janovice - Rýmařov, 79342"}, {"name": "Jusda Europe s.r.o.", "address": "Holandská 37, Drozdice, 53002"}, {"name": "K & V ELEKTRO a.s.", "address": "Týnská 1053/21, Praha - 1, 11000"}, {"name": "KA - Trans Czech s.r.o.", "address": "Tvardkova 1191, Ústí nad Orlicí, 562 01"}, {"name": "Kablo Vrchlabí s.r.o.", "address": "Českých bratří 509, Vrchlabí, 54301"}, {"name": "Kamax, s.r.o.", "address": "Nudvojovice 1474, Turnov, 51101"}, {"name": "Kamil Suruvka - Komfort taxi", "address": "U Kapličky 972, Orlová Lutyně, 73514"}, {"name": "KANALIZACE A VODOVODY Starý Plzenec,a.s.", "address": "Smetanova 195, Sedlec, Starý Plzenec, 33202"}, {"name": "KARCI TRANS s.r.o.", "address": "Zábrdovická 15/16a, Brno, 61500"}, {"name": "Karel Žďárek", "address": "Velká 26/43, Hradec Králové - Pouchov, 503 41"}, {"name": "KARETA s.r.o.", "address": "Krnovská 1877/51, Bruntál, 79201"}, {"name": "KASKO spol. s r.o.", "address": "SLAVKOV 82, Horní Němčí, 68764"}, {"name": "KAŠ - spol. s r. o.", "address": "Střádalů 656/81, Ostrava - Kunčičky, 71800"}, {"name": "Katrin Konečná - Komfort Taxi", "address": "Pokrok 1057/15, Ráj, 73401"}, {"name": "KAVERTRANS s.r.o.", "address": "Svitavská 500/7, Blansko, 67801"}, {"name": "KAYSER,s.r.o.", "address": "Libeň, Voctářova 2449/5, Praha 8-Libeň, 18000"}, {"name": "Kermi, s.r.o.", "address": "Dukelská ul. č.p. 1427, Stříbro, 34901"}, {"name": "KERN-LIEBERS CR spol. s r.o.", "address": "Okružní 607, České Budějovice 4, 37001"}, {"name": "KIESEL TRADE CS s.r.o.", "address": "Poštovní 783/1, Plzeň, 31200"}, {"name": "Kingspan a.s.", "address": "Vážní 465, Hradec Králové (část), 50003"}, {"name": "Kingspan Sp. z o.o.", "address": "Przemysłowa 20, LIPSKO, 27-300"}, {"name": "KLAUS Timber a.s.", "address": "KLADRUBCE 1, Kasejovice, 33544"}, {"name": "Kloboucká lesní s.r.o.", "address": "Vlárská 321, Brumov-Bylnice, 76331"}, {"name": "KLP s.r.o.", "address": "Rokytno 113, Sezemice, 533 04"}, {"name": "Knorr-Bremse Systémy pro užitková vozidla ČR, s.r.o.", "address": "Svárovská 700, Stráž nad Nisou, 46303"}, {"name": "KOBIT, spol. s r.o.", "address": "Rozvojová 269, 16500 Praha 6, Praha-Lysolaje, 16500"}, {"name": "Kocoń Sp. j. P.P.U.H. \"KOCOŃ\" SPÓŁKA JAWNA", "address": "Rycerka Górna 228, Rajcza, 34-370"}, {"name": "KODE TRANS s.r.o.", "address": "Stodolní 794/21, Moravská Ostrava, 70200"}, {"name": "Koleno Matyáš", "address": "Eldorádo 1623, Rychvald, 73532"}, {"name": "Komfort Logistic, s.r.o.", "address": "Obrovského 1877/17, Slezská Ostrava (část), 71000"}, {"name": "KOMFORT TAXI spol. s r.o.", "address": "Bohumínská 1950/5, Karviná-Fryštát, 73301"}, {"name": "Kompan Czech Republic s.r.o.", "address": "Vlastimila Pecha 1267/6, Brno-Černovice, 62700"}, {"name": "Komplexní domácí zdravotní péče Šebestová s.r.o.", "address": "Jana Čapka 721, Frýdek Místek, 73801"}, {"name": "KOPOS KOLÍN a.s.", "address": "Havlíčkova 432, Kolín IV, 28094"}, {"name": "KORYŤÁK, s.r.o.", "address": "Ondřejovice 4, Zlaté Hory, 79376"}, {"name": "KOTRLA a.s.", "address": "Rokytnice 190, Vsetín, 75501"}, {"name": "Kovárna VIVA, a.s.", "address": "Vavrečkova 5333, Zlín, 76001"}, {"name": "KOVOKON Popovice s.r.o.", "address": "Na Záhonech 1072, Kunovice, 68604"}, {"name": "Kovolit, a.s.", "address": "Nádražní 344, Modřice, 66442"}, {"name": "KOVONA SYSTEM, a.s.", "address": "Průmyslová 2007, Český Těšín, 73701"}, {"name": "KOVOSTEEL Recycling, s.r.o.", "address": "Brněnská 1372, Staré Město, 68603"}, {"name": "KOVOŠROT GROUP CZ s.r.o.", "address": "U kabelovny 682, Praha 10 - Dolní Měcholupy, 10200"}, {"name": "Kovošrot Larann s.r.o.", "address": "Rooseveltova 2096/20, Krnov - Pod Bezručovým vrchem, 79401"}, {"name": "Kozyk Trans LKW s.r.o.", "address": "Polanecká 95/51, Svinov, 72100"}, {"name": "KRAUS COMPANY s.r.o.", "address": "Staré Místo č.p. 68, Staré Místo, 506 01"}, {"name": "Kroměřížské technické služby, s.r.o.", "address": "Kaplanova 2959/6, Kroměříž, 76701"}, {"name": "KRONOSPAN CR, s.r.o.", "address": "Na Hranici 2361/6, Jihlava, 58601"}, {"name": "KROSTAV s.r.o.", "address": "Košíře, Černochova 1071/3, Košíře (část), 15800"}, {"name": "KUBALA-LES s.r.o.", "address": "Janovice 695, Janovice, 73911"}, {"name": "KUBIKO s.r.o.", "address": "Brumov 103, Brumov, 67923"}, {"name": "Kutálek Transport s.r.o.", "address": "Rohle 33, Rohle, 78974"}, {"name": "KVK Penopol s.r.o.", "address": "Kunčice nad Labem 150, Kunčice nad Labem, 54361"}, {"name": "KYOCERA AVX Components s.r.o. - závod Bzenec", "address": "Žichlínské Předměstí, Dvořákova 328, Lanškroun-Žichlínské Předměstí x), 56301"}, {"name": "L E S P O L Olomouc spol. s r.o.", "address": "Nové Sady Rokycanova 420, Nové Sady, 77900"}, {"name": "L. Neumüller spol. s r. o.", "address": "J.K.Tyla 580, Suchdol nad Lužnicí, 37806"}, {"name": "Lactalis CZ, s.r.o.", "address": "Praha - Chodov, Líbalova 2348/1, PSČ 14900, Chodov (část), 14900"}, {"name": "Ladislav Bršlica", "address": "Koclířov 222, KOCLÍŘOV U SVITAV, 569 11"}, {"name": "LADISLAV KREJZEK s.r.o.", "address": "Staré Město 303, Staré Město, 56932"}, {"name": "LANDENAL s.r.o.", "address": "Opatovice 97, Vyškov-Předměstí, 68201"}, {"name": "LAPP Czech Republic s.r.o.", "address": "Bartošova 315, Otrokovice - Kvítkovice, 76502"}, {"name": "LA-RE-JÓ Bt.", "address": "Ipar út 8, Sátoraljaújhely, 3980"}, {"name": "LASIUS Group, s.r.o.", "address": "Osvobození 123/9, Postřelmov, 78969"}, {"name": "Lasselsberger, s.r.o.", "address": "Adelova 2549/1, Plzeň 3-Jižní Předměstí, 32000"}, {"name": "Lasselsberger, s.r.o. - Logistika", "address": "Adelova 2549/1, Plzeň 3-Jižní Předměstí, 32000"}, {"name": "LB Cemix, s.r.o.", "address": "Tovární 36, Borovany, 37312"}, {"name": "Lear Corporation Czech Republic s.r.o - Plant Stříbro", "address": "Tovární 735/10, Vyškov-Předměstí, 68201"}, {"name": "Lear Corporation Czech Republic s.r.o. - pobočka VYŠKOV", "address": "Tovární 735/10, Vyškov-Předměstí, 68201"}, {"name": "LEGO Production s.r.o.", "address": "Jutská 2779, Kladno, 27201"}, {"name": "Lenzing Biocel Paskov a.s. (Dřevosklad)", "address": "Místecká 762, Paskov, 73921"}, {"name": "Lenzing Biocel Paskov a.s. (Expedice)", "address": "Místecká 762, Paskov, 73921"}, {"name": "Lesní družstvo ve Štokách", "address": "Štoky 261, Štoky, 58253"}, {"name": "Lesní společnost Broumov Holding, a.s.", "address": "Komenského 256, Broumov, 55001"}, {"name": "LESNICTVÍ KOHOUTEK s.r.o.", "address": "Dr. Horníčka 679, Tlumačov, 76362"}, {"name": "Lesníctvi Kohoutek s.r.o.", "address": "ul. Dr. Ignáce Horníčka 679, Tlumačov, 76362"}, {"name": "LESOLA, s.r.o.", "address": "Melantrichova 630/45, Prostějov, 79601"}, {"name": "Lesostavby Frýdek-Místek a. s.", "address": "Slezská 2766, Frýdek Místek, 73801"}, {"name": "LESS & TIMBER, a.s.", "address": "Chrudimská 1882, Čáslav-Nové Město, 28601"}, {"name": "LESY - DREVO EU s.r.o.", "address": "Údolní 407/50, Brno-Veveří, 60200"}, {"name": "Lesy Beskydy, a.s.", "address": "Ostravice č.p.250, Ostravice, 73914"}, {"name": "Lesy města Olomouce, a.s.", "address": "Lomená 177/4, Neředín, 779 00 Olomouc, Olomouc, 77900"}, {"name": "Lesy P. A. D., spol. s r.o.", "address": "Rymice 191, Rymice, 76901"}, {"name": "LETOVICKÉ STROJÍRNY, s.r.o.", "address": "Kunětická 2534/2, Praha 2 - Vinohrady, 12000"}, {"name": "Liberty Ostrava a.s.", "address": "Vratimovská 689/117, Ostrava, 70702"}, {"name": "Libor Kadlec", "address": "náměstí Míru 119, Olešnice, 67974"}, {"name": "Libor Válek - JOLLY TRANS", "address": "U rybníka 134, Most, 43401"}, {"name": "Linde Gas a.s.", "address": "U Technoplynu 1324, Praha 9, 19800"}, {"name": "Linde Material Handling Česká republika s.r.o.", "address": "Polygrafická 622/2, Praha 10-Malešice, 10800"}, {"name": "Linde Material Handling Česká republika s.r.o. (F.X.)", "address": "Polygrafická 622/2, Praha 10-Malešice, 10800"}, {"name": "Linde Material Handling Česká republika s.r.o. (GESTAMP)", "address": "Polygrafická 622/2, Praha 10-Malešice, 10800"}, {"name": "LIPOVICA trade s.r.o.", "address": "Zeleného 1267/67, Žabovřesky (část), 60200"}, {"name": "LITOVELSKÁ LESNÍ s.r.o.", "address": "Pavlínka 18/9a, Litovel, 78401"}, {"name": "LK spol s.r.o.", "address": "Miletínská 1080, Lišov (část), 37372"}, {"name": "LKW WALTER Internationale Transportorganisation AG", "address": "Z NO-Sud, Strasse 14, Postfach 36, Wiener Neudorf, A2355"}, {"name": "Logaritma a.s.", "address": "č.p. 373, 789 82 Moravičany, Moravičany, 78982"}, {"name": "Lokální poskytovatel s.r.o.", "address": "Václavovická 1073, 739 34 Šenov, Šenov, 73934"}, {"name": "LOMY MOŘINA spol. s r.o.", "address": "Mořina č.p. 73, Mořina, 26717"}, {"name": "LP STAVBY s.r.o.", "address": "Kostelní 72, Jirkov, 43111"}, {"name": "LPD Group s.r.o.", "address": "Kubelíkova 1224/42, Praha 3 - Žižkov, 13000"}, {"name": "LST a.s.", "address": "Trhanov 48, Trhanov, 34533"}, {"name": "Lubomír Froněk", "address": "Tyršova 800, Buštěhrad, 27343"}, {"name": "Lubomír Procházka", "address": "Kostelní 74, Jirkov, 43111"}, {"name": "Luboš Malina", "address": "Horní Holetín 77, Holetín, 539 71"}, {"name": "Luboš Musil", "address": "Lukavice 243, Lukavice, 51603"}, {"name": "Luděk Janků", "address": "Npor. Krále 752/40, Rousínov - Slavíkovice, 68301"}, {"name": "Luděk Olšový s.r.o.", "address": "Plk. Velebnovského č.p. 160, Jablunkov, 73991"}, {"name": "Lukáš Balada", "address": "ROKYTNO 207, Rokytno, 53304"}, {"name": "Lukáš Rychlý", "address": "Cibotín 15, Cibotín, 58301"}, {"name": "Lumisafe s.r.o.", "address": "Jankovcova 1037/49, Holešovice (část), 17000"}, {"name": "LURINK SERVICE s.r.o.", "address": "Vyšehradská 1349/2, Nové Město (část), 12800"}, {"name": "LUX trans s.r.o.", "address": "Velký Hájek 203, Dluhoňovice, Žamberk, 56401"}, {"name": "LV TRANSPORT s.r.o.", "address": "Ludslavice 107, Míškovice, 76852"}, {"name": "LXM Group a. s.", "address": "Malostranská 579, Šenov u Nového Jičína, 74242"}, {"name": "M.L.S. Holice, spol. s r. o., OLO1 expedice", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "M.L.S. Holice, spol. s r. o., OLO1 Montáž", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "M.L.S. Holice, spol. s r. o., OLO1 Navijárna", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "M.L.S. Holice, spol. s r. o., OLO1 sklad", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "M.L.S. Holice, spol. s r. o., OLO1 Šrotiště", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "M.L.S. Holice, spol. s r. o., OLO2 expedice", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "M.L.S. Holice, spol. s r. o., OLO2 Montáž", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "M.L.S. Holice, spol. s r. o., OLO2 Navijárna", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "M.L.S. Holice, spol. s r. o., OLO2 sklad", "address": "Sladkovského 149/43, Olomouc - Holice, 77900"}, {"name": "MADR Moravia s.r.o.", "address": "Ludvíkov 8, Ludvíkov, 79326"}, {"name": "Magna Automotive (CZ) s.r.o. - závod Lipovka", "address": "Pražská 5447, Chomutov (část), 43001"}, {"name": "Magna Automotive (CZ), s.r.o. - závod Řepov", "address": "Řepov 174, Řepov, 29301"}, {"name": "Magna Cartech spol. s r.o.", "address": "Hospodářský park č.p. 600, České Velenice, 37810"}, {"name": "Magna Cartech spol. s r.o. - Jeřáby", "address": "Hospodářský park č.p. 600, České Velenice, 37810"}, {"name": "Magna Exteriors (Bohemia) s.r.o.", "address": "Kubelíkova 604/73, Liberec VI-Rochlice, 46006"}, {"name": "Magna Exteriors (Bohemia) s.r.o. - Lipovka", "address": "Kubelíkova 604/73, Liberec VI-Rochlice, 46006"}, {"name": "Magna Exteriors (Bohemia) s.r.o. - Plazy", "address": "Kubelíkova 604/73, Liberec VI-Rochlice, 46006"}, {"name": "Magna Exteriors (Nymburk) s.r.o.", "address": "Kubelíkova 604/73, Liberec VI - Rochlice, 46006"}, {"name": "MahITI s.r.o.", "address": "Jaselská 289/31, Dejvice, 16000"}, {"name": "MAIER CZ, s.r.o.", "address": "Průmyslová 4259/14, Prostějov (část), 79601"}, {"name": "MAKENEX s.r.o.", "address": "MOŠNOV 130, Mošnov, 74251"}, {"name": "Maléř group zemní práce s.r.o.", "address": "Střítež nad Ludinou 91, Střítež nad Ludinou, 75363"}, {"name": "MAN Bus Sp. z o.o.", "address": "ul. Poznańska 4, Sady, 62-080"}, {"name": "Mansberk s.r.o.", "address": "Lidická 872/4, Znojmo, 66902"}, {"name": "MAN-TECH TRADING a.s.", "address": "Ovocný trh 572/11, Praha 1, 11000"}, {"name": "Marcel Kubančák", "address": "1. máje 548, Třinec - Staré Město, 73961"}, {"name": "Marek Březík", "address": "B.Nikodéma 4482/7 708 00 Ostrava-Poruba, Poruba, 70800"}, {"name": "Marie Jetelinová", "address": "Veslařská 730/158, Brno, 63700"}, {"name": "Mark2 Corporation Czech a.s.", "address": "Vladislavova 1390/17, Praha - 1, 11000"}, {"name": "MARKTRANS s.r.o.", "address": "Vaníčkova 922/7, Ústí nad Labem - město, 400 01"}, {"name": "MARSHAL LOGISTIC s.r.o.", "address": "Liptál 174, Liptál, 75631"}, {"name": "Marta Maralíková - Komfort Taxi", "address": "Josefa Brabce 2905/13, Ostrava, 70200"}, {"name": "Martin Černý", "address": "Habrovany 59, Habrovany, 40002"}, {"name": "Martin Černý", "address": "Břasy, 33824"}, {"name": "Martin Dolejška", "address": "Bojanovice 45, DAVLE, 252 06"}, {"name": "Martin Hrnčíř", "address": "Na Výhledu ev. č. 131, Zdiby - Přemyšlení, 250 66"}, {"name": "Martin Hub", "address": "Šumbark, Lidická 942/34, Šumbark, 73601"}, {"name": "Martin Janíček", "address": "Zrzavého 4978/51b, Jihlava, 58601"}, {"name": "Martin Janíček", "address": "Hruškové Dvory ev. č. 5023, Jihlava - Hruškové Dvory, 58601"}, {"name": "Martin Janů", "address": "Nové Dvory 95, ROUDNICE NAD LABEM, 413 01"}, {"name": "Martin Kloub", "address": "Vlčí 124, Chlumčany, 44001"}, {"name": "Martin Lazar", "address": "Žižkova 249/244, Trmice, 40004"}, {"name": "Martin Mikulenka", "address": "Police 100, LOUČKA U VALAŠSKÉHO MEZIŘÍČÍ, 756 44"}, {"name": "Martin Opíchal, s. r. o.", "address": "Kadeřín 24, Bouzov, 78325"}, {"name": "Martin Štefek - Komfort Taxi", "address": "26.dubna 523, Ostrava - plesná, Ostrava - Plesná, 70800"}, {"name": "Martin Židlík", "address": "Fryčovice 653, Fryčovice, 73945"}, {"name": "Matěj Glac", "address": "Poruba, 70800"}, {"name": "MATERIAL HANDLING EXPERTS SP. Z O.O. SP. K", "address": "Trakt Brzeski 142, SULEJÓWEK, 05-070"}, {"name": "Mátl & Bula, spol. s r.o.", "address": "Stará pošta 750, Rajhrad, 66461"}, {"name": "Maurice Ward & Co., s.r.o.", "address": "KNĚŽEVES 185, Středokluky, 25268"}, {"name": "Maxion Wheels Czech s.r.o.", "address": "Vratimovská 707, Ostrava - Kunčice, 71900"}, {"name": "Maxwell Kostein - komfort taxi", "address": "Gen. Hrušky 1198/4, Ostrava - Mariánské Hory a Hulváky - Mariánské Hory, 70900"}, {"name": "Mayr-Melnhof Holz Paskov, s.r.o.", "address": "STAŘÍČ 544, Staříč, 73943"}, {"name": "Mayr-Melnhof Holz Paskov, s.r.o. - Dřevaři", "address": "STAŘÍČ 544, Staříč, 73943"}, {"name": "MD ELEKTRONIK spol. s r.o.", "address": "Dobřanská 629, Chotěšov, 33214"}, {"name": "mdm NT Sp. z o.o.", "address": "Cieszyńska 1f,, 43-440 Bażanowice"}, {"name": "MEA Metal Applications s.r.o.", "address": "Domažlická 1059/180, Plzeň 3, Skvrňany, 318 00"}, {"name": "Mehler Texnologies s.r.o.", "address": "Šlechtova 860, Lomnice nad Popelkou, 51251"}, {"name": "Meiko Trans Poland Sp. o.o.", "address": "Wyczółkowskiego 121, 44-109 Gliwice, Poland, Gliwice"}, {"name": "MEIXNER & HANUŠ a.s. Czech republic", "address": "Francouzská 172/30, Praha 2 - Vinohrady, 12000"}, {"name": "Melda Pavel s.r.o.", "address": "Vrchlického 1176/8, Bruntál 1, 79201"}, {"name": "MELECKY a.s.", "address": "Čermenská 910, Vítkov, 74901"}, {"name": "MERIMEX s.r.o.", "address": "Útočiště 649, Klášterec nad Ohří, 43151"}, {"name": "MERTASTAV s.r.o.", "address": "Štěpánovská 1176, Předklášteří, 66602"}, {"name": "Město Město Albrechtice", "address": "nám. ČSA 27/10, Město Albrechtice, 79395"}, {"name": "METAL SERVICES & SOLUTIONS s.r.o.", "address": "Sokolovská 192/79, Praha 8-Karlín, 18600"}, {"name": "Metaldyne Oslavany, spol. s r.o. (pobočka Oslavany)", "address": "Padochovská 1117/1, Oslavany, 66412"}, {"name": "Metaldyne Oslavany, spol. s r.o. (pobočka Zbýšov)", "address": "Padochovská 1117/1, Oslavany, 66412"}, {"name": "Metalšrot Tlumačov a.s.", "address": "Mánesova 510, Tlumačov, 76362"}, {"name": "Metrostav a.s.", "address": "Koželužská 2450/4, Praha 8-Libeň, 18000"}, {"name": "Metrostav Infrastructure a.s.", "address": "Koželužská 2450/4, Praha 8-Libeň, 18000"}, {"name": "MG AUTODOPRAVA s.r.o.", "address": "Višňová 305, Višňová, 26261"}, {"name": "MGI-BUD Sp. z o.o.", "address": "Unii Eropejskiej 10/90, OŚWIĘCIM, 32-600"}, {"name": "Miejski Zarzad Dróg i Mostow", "address": "Krakowská 9, Jaworzno, 43-600"}, {"name": "Miejskie Przedsiębiorstwo Gospodarki Komunalnej i Mieszkaniowej Spółka z o.o.", "address": "Modrzewiowa 1, Poreba, 42-480"}, {"name": "Miejskie Przedsiebiorstwo Oczyszczania Sp. z o.o.", "address": "ul. Galmany 1, Jaworzno, 43-600"}, {"name": "Michal Radecký", "address": "Pustějov 320, Pustějov, 74243"}, {"name": "Michal Vlach - ZEMPRA", "address": "Dětkovice 100, Dětkovice, 79804"}, {"name": "Michal Zachariáš", "address": "České Libchavy 197, České Libchavy, 56114"}, {"name": "MICHALE s.r.o.", "address": "Loučky 13, Loučky, 58833"}, {"name": "Michalec Vladimír", "address": "Sadova 23/278, Křelov - Břuchotín, 78336"}, {"name": "Milacron Czech Republic s.r.o.", "address": "Betlémské náměstí 351/6, Praha 1 - Staré Město, 11000"}, {"name": "Milan Bečák", "address": "Souhrady 58, Fryšták, 76316"}, {"name": "Milan Grubhoffer", "address": "U Liboháje 81, Dolní Předměstí, 57201"}, {"name": "Milan Jarabica - Komfort Taxi", "address": "Janského 1738/17,  Karviná - Nové Město, Karviná-Nové Město, 73506"}, {"name": "Milan Krištof", "address": "Horní Suchá, Zelená 46/35, Horní Suchá, 73535"}, {"name": "Milan Mlýnek", "address": "Hrachovec 240, Valašské Meziříčí, 75701"}, {"name": "Milan Šubr", "address": "HOUDKOVICE 65, Dobruška, 51801"}, {"name": "Miloslav Dostál", "address": "Senička 6, SENICE NA HANÉ, 783 45"}, {"name": "Miloslav Flaška", "address": "Fratniškov 1, Suchdol nad Lužnicí, 37806"}, {"name": "Miloš Dopita", "address": "Vortová 111, Vortová, 539 61"}, {"name": "Miloš Kaman", "address": "Švestková 848/6, Brno - Maloměřice, 61400"}, {"name": "Miloš Soukup", "address": "Vojice 76, Hořice, 50801"}, {"name": "MILSED AUTO s.r.o.", "address": "Horní Těrlicko 28, Těrlicko, 73542"}, {"name": "Miroslav Hlawiczka", "address": "Vendryně 247, Vendryně, 73994"}, {"name": "Miroslav Langer", "address": "Lázky 603, Vsetín, 755 01"}, {"name": "MIROSLAV MECNER", "address": "Dukelská 969/1, Rýmařov, 79501"}, {"name": "Miroslav Omelka", "address": "Bílovice 489, Bílovice, 68712"}, {"name": "Miroslav Smelý", "address": "PÍSEČNÁ 145, Písečná, 56170"}, {"name": "Miroslava Šamajová", "address": "Nová Ves 29, Frýdlant nad Ostravicí, 73911"}, {"name": "MK SPEDICE, s.r.o.", "address": "Budkovice 64, Ivančice, 66491"}, {"name": "Mlékárna Klatovy, s.r.o.", "address": "Za tratí č.p. 640, Klatovy IV, 33901"}, {"name": "Mobis Automotive Czech, s.r.o.", "address": "Hyundai 171/2, Dobrá, 73951"}, {"name": "Model Obaly a.s.", "address": "Těšínská 2675/102, Opava, 74601"}, {"name": "Mogador s.r.o.", "address": "tř. Tomáše Bati 1664, Otrokovice, 76501"}, {"name": "Mojmír Bártek", "address": "Rudná 553/9, Vítkovice, 70300"}, {"name": "MOLITAS CZECH, s.r.o.", "address": "U Mlýna 285, Josefov, 55102"}, {"name": "MOLITAS TECHNOLOGY s.r.o.", "address": "Mládežnická 336, Břeclav, 69075"}, {"name": "MOLITAS, spol. s r.o.", "address": "Raková u Golisa 271, Raková, Slovensko, 02351"}, {"name": "Mölnlycke Health Care Klinipro, s.r.o. - Karviná", "address": "Na Novém poli 382/1, Karviná Staré Město, 73301"}, {"name": "Mölnlycke Health Care ProcedurePak s.r.o. - Havířov", "address": "Na Novém poli 382/1, Karviná Staré Město, 73301"}, {"name": "Mondelez Czech Republic s.r.o.", "address": "Karlín, Karolinská 661/4, Praha 8 - Karlín, 18607"}, {"name": "MONTEFERRO HRÁDEK a. s.", "address": "Rokycanská 204, Nová Huť, 33842"}, {"name": "MORAVIA CANS a.s.", "address": "Tovární 532, Bojkovice, 68771"}, {"name": "Moravskoslezská lesní, s.r.o.", "address": "Ostravice čp. 721, Ostravice, 73914"}, {"name": "MOTOR JIKOV Strojírenská a.s.", "address": "Zátkova 495, Soběslav II, 39201"}, {"name": "MP-ČR a.s.", "address": "Vodařská 232/2, Brno - Horní Heršpice, 61900"}, {"name": "MROZEK a.s.", "address": "Bystřice čp. 1361, Bystřice nad Olší, 73995"}, {"name": "MS technik spol. s r.o.", "address": "Dukelská 114, Šenov u Nového Jičína, 74242"}, {"name": "MSEM, a.s.", "address": "Collo-louky 126, Frýdek Místek, 73801"}, {"name": "MSGas s.r.o.", "address": "Selská 449, Sviadnov, 73925"}, {"name": "MSV Metal Studénka, a.s.", "address": "R. Tomáška 859, Studénka, 74213"}, {"name": "Mt. forest s.r.o", "address": "Velké Karlovice 1013, PSČ 75606, Malé Karlovice, 75606"}, {"name": "MTC - invest s.r.o.", "address": "Černomořská 419/10, Praha 10-Vršovice, 10100"}, {"name": "MTJ TYC JAN", "address": "Jana Kazimierza 2/2, Milówka, 34-360"}, {"name": "MTL ASCO Sp. z o.o. (akce  Saferoad Pomerania Szczecin)", "address": "ul. Wielowiejska 53, Pyskowice, 44-120"}, {"name": "MTL ASCO Sp. z o.o. (akce  TELFONICA KABLE BYDGOSZCZ)", "address": "ul. Wielowiejska 53, Pyskowice, 44-120"}, {"name": "MTL ASCO Sp. z o.o. (akce PATRONE e MONGIELLO)", "address": "ul. Wielowiejska 53, Pyskowice, 44-120"}, {"name": "Mürdter Dvořák, lisovna, spol. s r.o.", "address": "OLŠANY U PROSTĚJOVA 19, Olšany u Prostějova, 79814"}, {"name": "NaCesty.cz s.r.o.", "address": "Puškinova 2141/14, Jižní Předměstí, Jižní Předměstí, 30100"}, {"name": "Národní divadlo moravskoslezské, příspěvková organizace", "address": "Moravská Ostrava a Přívoz, Čs. legií 148/14, Ostrava-Přívoz (část) x), 70200"}, {"name": "NC Line a. s.", "address": "Komenského 233, Suchdol nad Odrou, 74201"}, {"name": "NDŽ s.r.o.", "address": "Košická 2, Žilina, Slovensko, 01065"}, {"name": "Nedcon Bohemia, s.r.o.", "address": "Drozdice, Holandská 34, Drozdice, 53002"}, {"name": "Nejdecká česárna vlny, a.s.", "address": "Nádražní 1267, Nejdek, 36221"}, {"name": "NET spol. s r.o.", "address": "Čechyňská 23, Brno, 60200"}, {"name": "NET spol. s r.o. (Akce ČEZ Žabeň)", "address": "Čechyňská 23, Brno, 60200"}, {"name": "NETIS, a.s.", "address": "Návsí 905, Návsí, okres: Frýdek-Místek, 73992"}, {"name": "NEZÁVISLÁ PŘEJÍMKA s.r.o.", "address": "Bělohorská 274/9, Praha 6-Břevnov, 16900"}, {"name": "NIKA dřevoprodej, s.r.o.", "address": "Olomouc - Hodolany, Farského 357/13, Olomouc, 77900"}, {"name": "NOKIA Bydgoszcz ICC Factory", "address": "ul. Pilicka 6, Bydgoszcz, 85-776"}, {"name": "Norican Czech s.r.o.", "address": "Za Balonkou 269, Příbram I, 26101"}, {"name": "NORMA Czech, s.r.o.", "address": "Havlíčkova 540/28, Hustopeče, 69301"}, {"name": "Nowoczesne Systemy Budowlane Sp. z o.o.", "address": "ul. Jachimowskiego 34, Kazimierza Wielka, 28-500"}, {"name": "Odlewnia Zeliwa Lisie Katy Sławomir i Bogusław Mioduszewscy Sp.J", "address": "Lisie Kąty 7, 86-302 GRUDZIADZ"}, {"name": "OHL ŽS, a.s.", "address": "Burešova 938/17, Brno-Veveří, 60200"}, {"name": "Oktan Energy - Wina Sp. z o.o.", "address": "Stanisława Hryniewieckiego 1, Szczecin, 70-606"}, {"name": "Oldřich Robenek", "address": "Sokolská 330, Šilheřovice, 74715"}, {"name": "Omelka Nature s.r.o.", "address": "Slovácká 1720, Mařatice, Uherské Hradiště (část), 68601"}, {"name": "Omítky - potěry s.r.o.", "address": "Tř. Maršála Malinovského 884, Uherské Hradiště (část), 68601"}, {"name": "ONDRÁŠEK INK - JET SYSTEMS spol. s r.o.", "address": "Metylovská 1862, Frýdlant nad Ostravicí, 73911"}, {"name": "ONDRÁŠEK Slovakia, s.r.o.", "address": "Horná 1632, Čadca, 02201"}, {"name": "Ontex CZ, s.r.o.", "address": "Vesecko 491, Turnov, 51101"}, {"name": "OP papírna, s.r.o.", "address": "OLŠANY 18, Olšany, 78962"}, {"name": "OP Trans s.r.o.", "address": "Ostravská 506, Starý Bohumín, 735 81 Bohumín, 73581"}, {"name": "ORCA VSETÍN, s.r.o.", "address": "Okružní 446, Rokytnice, 75501"}, {"name": "Orkla Food Ingredients Česko s.r.o.", "address": "Na Staré silnici 185, Kněževes, 25268"}, {"name": "Orkla Foods Česko a Slovensko a.s.", "address": "Mělnická 133, Byšice, 27732"}, {"name": "Orkla Foods Česko a Slovensko a.s. - závod Babice", "address": "Mělnická 133, Byšice, 27732"}, {"name": "Orkla Foods Česko a Slovensko a.s. - závod Byšice", "address": "Mělnická 133, Byšice, 27732"}, {"name": "Orkla Foods Česko a Slovensko a.s. - závod Roudnice n. L.", "address": "Mělnická 133, Byšice, 27732"}, {"name": "Orkla Foods Česko a Slovensko a.s. - závod Staré Město", "address": "Mělnická 133, Byšice, 27732"}, {"name": "ORLEN Unipetrol RPA s.r.o.", "address": "Záluží 1, Záluží, 43601"}, {"name": "ORLOVSKÁ LESNÍ s.r.o. - lesovozy", "address": "Osvobození 1329, Orlová - Lutyně, 73514"}, {"name": "OSMI Pro s.r.o.", "address": "Svitavská 500/7, Blansko, 67801"}, {"name": "OSTAX, spol. s r.o.", "address": "Jarcová 71, Valašské Meziříčí, 75701"}, {"name": "Ostravské komunikace, a.s.", "address": "Novoveská 25/1266, Ostrava - Mariánské Hory, 70900"}, {"name": "Ostravské vodárny a kanalizace a.s.", "address": "Nádražní 28/3114, Ostrava - Moravská Ostrava"}, {"name": "Otava, výrobní družstvo", "address": "Vinařického 374, Písek, 39701"}, {"name": "OurWorkNess Development s.r.o.", "address": "náměstí Gen. Svobody 2034/4, Zábřeh, Zábřeh (část), 70030"}, {"name": "p. Zbyněk Pělucha", "address": "Fryčovice15, Frýdek-Místek, 739 45"}, {"name": "P.H.U. Trans-Wood Krzysztof Wdowiak", "address": "Sułków 60, Krasocin, 29-105"}, {"name": "P.P.H.U. KARP", "address": "Wojtova 113, Lipniky, 38 - 305"}, {"name": "P.P.H.U. TRACO Łukasz Musiał", "address": "Piekarska 50, Bielsko-Biala, 43-300"}, {"name": "PALIGATECH", "address": "Parkowa 36, ŚWIERKLANIEC, 42-622"}, {"name": "Panasonic Automotive Systems Czech, s.r.o.", "address": "U Panasonicu 266, Pardubice - Staré Čívice, 53006"}, {"name": "PAOLLI, s.r.o.", "address": "Areál Tatry 1445/2, Kopřivnice, 74221"}, {"name": "PARAGAN s.r.o.", "address": "Lipnická 351, Hranice IV - Drahotuše, 75361"}, {"name": "Paramo, a.s.", "address": "Přerovská 560, PARDUBICE VI - SVÍTKOV, 530 06"}, {"name": "PAROC Polska Sp. z o.o. PL", "address": "Gnieźnieńska 4, TRZEMESZNO, 62-240"}, {"name": "Partner in Pet Food CZ, s.r.o.", "address": "Bucharova 1423/6, Praha 13 - Nové Butovice, 15800"}, {"name": "Partr spol. s r.o.", "address": "Všemina 234, Slušovice, 76315"}, {"name": "PAŠKO CZ, s.r.o.", "address": "Ostravská 843, Sviadnov, 73925"}, {"name": "PATOK, a.s.", "address": "U Porcelánky 2903, Louny, 44001"}, {"name": "Pavel Bajer BAMED s.r.o.", "address": "Dolní 642, 74266 Štramberk, Štramberk, 74266"}, {"name": "Pavel Bajer s. r. o.", "address": "Dolní 642, 74266 Štramberk, Štramberk, 74266"}, {"name": "Pavel Gola", "address": "Ostravice 734, Ostravice, 73914"}, {"name": "Pavel Grundmann", "address": "třída SNP 622/38, Hradec Králové (část), 50003"}, {"name": "Pavel Jozíf", "address": "Dvořákova 55, Čeperka - OPATOVICE NAD LABEM, 533 45"}, {"name": "Pavel Koláček", "address": "Otmarov 14, MĚNÍN, 664 57"}, {"name": "Pavel Krátký", "address": "Vysoká nad Labem 175, Vysoká nad Labem, 50331"}, {"name": "Pavel Kyp", "address": "Revoluční 691/9, Teplice, 415 01"}, {"name": "Pavel Mácha", "address": "Petřvald 451, Petřvald u Nového Jičína, 74260"}, {"name": "Pavel Svrček", "address": "Hlavní 324, Zaječí, 69105"}, {"name": "PAVLICA, s.r.o.", "address": "Antala Staška 1365/70, Praha 4 - Krč, 14000"}, {"name": "Pavlovič CZ s.r.o.", "address": "Rokytnice 479, Vsetín, 75501"}, {"name": "Pazdera s.r.o.", "address": "Na Letné 797, Velká Bystřice, 78353"}, {"name": "PEDOP s.r.o.", "address": "Lipovec 367, Lipovec, 67915"}, {"name": "PEKABEX BET S.A.", "address": "Szarych Szeregów 27 60-462 Poznań"}, {"name": "Pelaba s.r.o.", "address": "Jičín č.p. 135, Holín, 50601"}, {"name": "PeMap s.r.o.", "address": "Kojetínská 3663/43, Přerov I - Město, 75002"}, {"name": "PESTA2 - Mirosław Rybkowski", "address": "Pierwszej Brygady 35, STARGRAD SZCZECINSKI, 73-110"}, {"name": "Pešat Svatopluk", "address": "Náměstí 45, Paskov, 73921"}, {"name": "Petr Dašek", "address": "Ve Skalkách 707, Šestajovice, 250 92"}, {"name": "Petr Deutscher", "address": "Hlavní 133, Opatovice, 75356"}, {"name": "Petr Filip", "address": "K Zelinkovicím 206, Chlebovice, 73942"}, {"name": "Petr Fryč", "address": "Jiráskova 496, Osek, 41705"}, {"name": "Petr Gitter - Komfort Taxi", "address": "Hasičská 913/26, Ostrava - Hrabůvka, 70200"}, {"name": "Petr Hadaš - Komfort TAXI", "address": "Dolní 100, Dolní Lutyně-Věřňovice, 73553"}, {"name": "Petr Kubátko - Komfort taxi", "address": "Dětmarovice 374, Dětmarovice, 73571"}, {"name": "Petr Lukáš", "address": "Houškova 499/7, Plzeň 2-Slovany - Východní Předměstí, 32600"}, {"name": "Petr Sahulka", "address": "Chlístovice 12, Chlístovice, 28401"}, {"name": "Petr Stareček", "address": "K  Mostu 393, Stará Ves nad Ondřejnicí, 73923"}, {"name": "Petr Svrček", "address": "Dlážděná 378, Zaječí, 69105"}, {"name": "Petr Ševčík - akce Mondelez", "address": "Svobody 212/60, Bolatice, 74723"}, {"name": "Petr Vychodil", "address": "Synkova 372/2, Lazce, 77900"}, {"name": "Petr Vyka", "address": "Bělotín 127, Bělotín, 75364"}, {"name": "Petr Vystavěl", "address": "Salajky 429, Brodek u Prostějova, 79807"}, {"name": "PETRO ENERGIA Sp. z o.o.", "address": "11 Listopada 65, KOLUSZKI, 95-040"}, {"name": "PETROM STAVBY, a.s.", "address": "Běchovická 701/26, Strašnice (Praha 10) (část), 10000"}, {"name": "PETROMA KAMENOLOMY s.r.o.", "address": "Vilémov 120, Vilémov, 43154"}, {"name": "PETROTRANS, s.r.o.", "address": "Poděbradská 538/46, Vysočany (Praha 9) (část), 19000"}, {"name": "PETRUS Trans s.r.o.", "address": "Petra Bezruče 1272, Ledeč nad Sázavou, 58401"}, {"name": "Pfeifer Holz s.r.o.", "address": "Chanovice 102, Chanovice-Horažďovice, 34101"}, {"name": "Pfeifer Holz s.r.o. - závod Trhanov", "address": "Trhanov 72, Trhanov, 34533"}, {"name": "PHU \"DAGAS\" GRZEGORZ KAJCA", "address": "KUKUŁEK 41, Sosnowiec, 41-200"}, {"name": "PH-U \"EITO\"", "address": "ul. Grodzka 17/14 58-316 Wałbrzych"}, {"name": "PIAS Suchdol, a.s.", "address": "Dobřeň 94, Suchdol, 28502"}, {"name": "Pierburg, s.r.o.", "address": "K Pierburgu 455/1, Ústí nad Labem, 400 01"}, {"name": "Pila Ručka s.r.o.", "address": "Horní Tošanovice 181, PSČ 73953, Horní Tošanovice, 73953"}, {"name": "PILA ŠIROKÁ NIVA s.r.o.", "address": "Široká Niva 226, Bruntál 1 - Široká Niva, 79201"}, {"name": "PILWOOD SK, s.r.o.", "address": "Jesenského 1089/11, Žilina 1, 01001"}, {"name": "Pipelife Czech s.r.o.", "address": "Kučovaniny 1778, Otrokovice, 76501"}, {"name": "Pittsburgh Corning CR, s.r.o.", "address": "Průmyslová 3, Klášterec nad Ohří, 43151"}, {"name": "PKP CARGO INTERNATIONAL a.s.", "address": "Hornopolní 3314/38, Moravská Ostrava, 702 00 Ostrava, Moravská Ostrava (část), 70200"}, {"name": "PKS okna a.s.", "address": "Brněnská 126/38, Žďár nad Sázavou 1, 59101"}, {"name": "Plaček Pet Products s.r.o.", "address": "Revoluční 1381, Poděbrady, 29001"}, {"name": "PLANEO Elektro Hradec Králové", "address": "Pilnáčkova 537, Hradec Králové, 50002"}, {"name": "PLANGEO služby s.r.o.", "address": "Masná 1492/10, Moravská Ostrava, 70200"}, {"name": "PLASTIKA a.s.", "address": "Kaplanova 2830/4, Kroměříž, 76701"}, {"name": "Plzeňský Prazdroj, a. s.", "address": "U Prazdroje 7, Plzeň - město, 30497"}, {"name": "Plzeňský Prazdroj, a. s. - Radegast Nošovice", "address": "U Prazdroje 7, Plzeň - město, 30497"}, {"name": "PM CZ s.r.o.", "address": "Modletice 137, Modletice, 25101"}, {"name": "PM Trans s.r.o.", "address": "Třanovická č. 52, Český Těšín, Koňákov, 73562"}, {"name": "PNEU PLUS s.r.o.", "address": "Sudoměřice 9, Sudoměřice, 69666"}, {"name": "Podlahy Blažek, s.r.o.", "address": "Průmyslová 1140, Dolní Bojanovice, 69617"}, {"name": "Polimer Spólka Jawna R.Krzewiňsky A.Kmiecik", "address": "ul. Batorego 24, Andrychów, 34120"}, {"name": "POS Media Czech Republic, s.r.o.", "address": "Budějovická 778/3, Michle (část), 14000"}, {"name": "POSITOR stavební s.r.o.", "address": "Moravská Ostrava a Přívoz, Havlíčkovo nábřeží 2728/38, Ostrava-Přívoz (část) x), 70200"}, {"name": "PPD První servisní s.r.o.", "address": "Štramberská 2872, Vítkovice, 703 00 Ostrava, Vítkovice, 70300"}, {"name": "PPHU \"LAKTOPOL\" Sp. z o.o.", "address": "ul. Wojska Polskiego 110 c, SUWAŁKI, 16-400"}, {"name": "PPHU Hydrew Paweł Bednarz PL", "address": "Przsiółki 13, Łaziska Górne, 43-170"}, {"name": "Pradědský lesní závod, a.s.", "address": "Nádražní 599, Vrbno pod Pradědem, 79326"}, {"name": "Pratt & Whitney Kalisz Sp. z o. o.", "address": "Elektryczna 4a, KALISZ, 62-800"}, {"name": "PROBO BUS a.s.", "address": "Pod Hájem 97, Králův Dvůr, 26701"}, {"name": "Procter & Gamble - Rakona, s.r.o.", "address": "Ottova 402, Rakovník, 26901"}, {"name": "Prologis Park Piotrków", "address": "Aleja Gen. W.Sikorskiego 79, PIETRKÓW TRYBUNALSKI, 97-320"}, {"name": "Promens Zlín a.s.", "address": "Cecilka 38, Zlín - Příluky, 76001"}, {"name": "První Signální, a.s.", "address": "Bohumínská 368/172, Ostrava - Muglinov, 71200"}, {"name": "Prywatny Przewóz Osób i Towarów Byrski Mieczysław", "address": "Ul. PONIKIEW 230, WADOWICE, 34-100"}, {"name": "Przedsiębiorstwo Produkcyjno- Handlowo- Usługowe \"DREW-MAR\" Marcin Łakus", "address": "Jurowice, 38-507"}, {"name": "Przedsiębiorstwo Transportowo-Handlowe ,,JANA\" Leszek Wałoszek", "address": "Armii Krajowej 17/28  38-500, SANOK, 38-500"}, {"name": "Przedsiębiorstwo Wielobranżowe Bartłomiej Witulski", "address": "Soblówka 185a, 34-371,, Soblówka, Poland, 34-371"}, {"name": "PS BRNO, s.r.o.", "address": "Vídeňská 153/119b, Brno, 61900"}, {"name": "PS Opava spol. s r. o. (Akce Mondelez Opava)", "address": "Kylešovská 2593/12, Předměstí (Opava), 74601"}, {"name": "PSOTA transport s.r.o.", "address": "Chvalovice čp. 81, Chvalovice, 66902"}, {"name": "PSOTKA, s.r.o.", "address": "Zlechov 119, PSČ, Zlechov, 68710"}, {"name": "PTD CZ, s.r.o.", "address": "Nížkovice 279, Nížkovice, 68401"}, {"name": "PUH NATI JUSZCZYK SEBASTIAN", "address": "NIDZIANSKA 3, 26-026 MORAWICA"}, {"name": "PUH NATI JUSZCZYK SEBASTIAN (akce NORDKALK Sp. zo.o.)", "address": "NIDZIANSKA 3, 26-026 MORAWICA"}, {"name": "PULLWOOD, s.r.o.", "address": "Husova 191/2, Jeseník, 79001"}, {"name": "PURETA s.r.o.", "address": "Brněnská 4372/61B, Hodonín, 69501"}, {"name": "PV Recyklace s.r.o.", "address": "Vrahovická 4720/52, Prostějov, 79601"}, {"name": "PVKP stavební, s. r. o.", "address": "Luhovská 1738/4, Praha 8-Kobylisy x), 18200"}, {"name": "PWO Czech Republic a.s.", "address": "Palackého 1261, Valašské Meziříčí, 75701"}, {"name": "PZ - Building s.r.o", "address": "Pod Břízkami 800, Pardubice, 53002_x000D_\n_x000D_"}, {"name": "Raben Logistics Czech s.r.o.", "address": "Komerční 535, Nupaky, 25101"}, {"name": "Raben Logistics Czech s.r.o. - Nupaky", "address": "Komerční 535, Nupaky, 25101"}, {"name": "Radek Dvořák", "address": "U tvrze 1443/21, Bechlejovice-Děčín, 40502"}, {"name": "Radek Ernygr", "address": "Srbice 14, Teplice, 41501"}, {"name": "Radek Hruška Trans s.r.o.", "address": "Radim 16e, Brantice, 79401"}, {"name": "Radek Polažinec", "address": "Zeměchy 21, Jimlín, 44001"}, {"name": "Radek Ptáček", "address": "U Váhy 1194, Kostelec nad Orlicí, 51741"}, {"name": "Radek Vőlkl", "address": "Hruškové Dvory ev. č. 377, Jihlava, 58601"}, {"name": "Rádl, spol. s r.o.", "address": "Domažlická 178, Plzeň, 31462"}, {"name": "Radovan Bielský", "address": "Březová 538/10, Karviná-Ráj, 73401"}, {"name": "Radovan Jurčík - Komfort taxi", "address": "Lesní 799, Orlová 4, 73514"}, {"name": "RALEDO s.r.o.", "address": "J.K. Tyla 1584/10a, Moravská Třebová -Předměstí, 57101"}, {"name": "RDS bus s.r.o.", "address": "Babylon 121, Domažlice 1, 34401"}, {"name": "RECYS-MACH s.r.o.", "address": "Citice 1, Citice, 35601"}, {"name": "RecyTrans s.r.o.", "address": "Nákladní 3179/1, Moravská Ostrava (část), 70200"}, {"name": "RegioJet a.s.", "address": "Obchodná 48, Bratislava 1, 81106"}, {"name": "REKULTIVAČNÍ VÝSTAVBA Most, a.s.", "address": "Čepirohy 136, Most, 43401"}, {"name": "RELITRANS s.r.o.", "address": "Prokopa Velikého 264/26, Ostrava - Vítkovice, 70300"}, {"name": "René Sedláček", "address": "1. máje 792, Bohumín-Skřečoň, 73531"}, {"name": "René Trnčík", "address": "Olešná 76, Olešná, 26901"}, {"name": "RENOKOV STEEL s.r.o.", "address": "Střelice 95, Střelice, 67153"}, {"name": "ReviCompl s.r.o.", "address": "Nové Dvory - Kamenec 3605, Frýdek Místek, 73801"}, {"name": "Richard Schandara", "address": "Brandov 89, Brandov, 43547"}, {"name": "RITSCHNY kovošrot a sběrné suroviny s.r.o.", "address": "Vávrovická č.p. 267/91, Vávrovice-Opava, 74773"}, {"name": "ROCKWOOL, a.s.", "address": "Skřečoň, Cihelní 769, Bohumín-Skřečoň, 73531"}, {"name": "Röchling Automotive Kopřivnice s.r.o.", "address": "Vlčovice, Průmyslový park 308, Kopřivnice, 74221"}, {"name": "Rojapro s.r.o.", "address": "Telnická 176, Sokolnice, 66452"}, {"name": "ROMAN - TRANS SPEDITION s r.o", "address": "Modrá 1977, Náchod, 54701"}, {"name": "Roman Cvešper", "address": "Potštát - Kovářov 39, PSČ 75362, Potštát, 75362"}, {"name": "Roman Melechovský", "address": "Všechlapy 103, Zabrušany, 41771"}, {"name": "Roman Neubauer", "address": "Nádražní 533, Javorník, 79070"}, {"name": "Roman Rychlý", "address": "Cibotín 15, Česká Bělá - CHOTĚBOŘ, 583 01"}, {"name": "Roman Studýnka", "address": "Kamínky 4, Brno-Nový Lískovec (část) x), 63400"}, {"name": "ROMANS Manufacture s.r.o.", "address": "náměstí 14. října 1307/2, Praha 5, 15000"}, {"name": "ROMATON s.r.o.", "address": "Na drahách 270, Sviadnov, 73925"}, {"name": "ROMOTOP spol. s r. o.", "address": "Komenského 325, Suchdol nad Odrou, 74201"}, {"name": "ROSSMANN, spol. s r.o.", "address": "Na Pankráci 1683/127, Praha 4, 14000"}, {"name": "Rubena, s.r.o.", "address": "Českých Bratří 338, Náchod, 54701"}, {"name": "Rudolf Šikl", "address": "Klíšská 957/117, Ústí nad Labem - Klíše, 40001"}, {"name": "RUMPOLD s.r.o.", "address": "Klimentská 52, Praha 1, 11000"}, {"name": "RUMPOLD s.r.o. provozovna Ostrava", "address": "K Šachtě 49, Ostrava, 71100"}, {"name": "RUMPOLD UHB, s.r.o.", "address": "Předbranská 415, Uherský Brod, 68801"}, {"name": "RUMPOLD-P s.r.o.", "address": "Čs. armády 29, Příbram, 26101"}, {"name": "RVGrader s.r.o.", "address": "Moravská strana 456, Olešnice, 67974"}, {"name": "Saaxis Robotics s.r.o.", "address": "U Prašné brány 1079/3, Nové Město (Praha 1), 11000"}, {"name": "Saferoad Pomerania Sp. z o.o", "address": "Stanisława Dubois 23, 71-610 SZCZECIN"}, {"name": "Saint-Gobain Construction Products CZ a.s. - Častalovice", "address": "Smrčkova 2485/4, Praha 8-Libeň, 18000"}, {"name": "SAJDOK a.s.", "address": "Frýdecká 572, Staré Město, 739 61 Třinec, Třinec, 73961"}, {"name": "SAMSONSTAV s.r.o.", "address": "Vohančice 11, Vohančice, 66601"}, {"name": "Santini Group s.r.o.", "address": "Londýnská 2397/60, Praha 2, 12000"}, {"name": "Sběrné suroviny Krnov s.r.o.", "address": "Albrechtická 1781/109a, Pod Bezručovým vrchem, 794 01 Krnov, Krnov, 79401"}, {"name": "SCANIA CZECH REPUBLIC s.r.o.", "address": "Chřásťany 186, Chrášťany, 25219"}, {"name": "SCANIA CZECH REPUBLIC s.r.o.-Dealer severní čechy", "address": "Chřásťany 186, Rudná u Prahy, 25219"}, {"name": "SD – Kolejová doprava, a. s.", "address": "Tušimice 7, Kadaň, 43201"}, {"name": "SD - Kovo Mladá Boleslav, a.s.", "address": "Dukelská 1430, Mladá Boleslav, 29301"}, {"name": "SEBUS s.r.o.", "address": "Viničné Šumice 371, Viničné Šumice, 66406"}, {"name": "SEBUS trans s.r.o.", "address": "Viničné Šumice 371, Viničné Šumice, 66406"}, {"name": "Select Energy Sp. z o.o.", "address": "Jana z Kc\tul. Jana z Kolna 7, Szczecin"}, {"name": "SEMASPED, s.r.o.", "address": "Obránců míru 164, Broumov, 55001"}, {"name": "SENA FEST spol. s r.o.", "address": "Zlatá Hora 1246, Slavkov u Brna, 68401"}, {"name": "SETMIL Sp. z o.o.", "address": "Pyskowicka 20"}, {"name": "SG STAVBY s.r.o.", "address": "Oldřichova 247/5, Praha 2-Nusle (část) x), 12800"}, {"name": "SGM Route, a.s.", "address": "Bukovecká 613, Jablunkov, 73991"}, {"name": "Schaeffler Production CZ s.r.o. - Lanš.", "address": "Dvořákova 328, Lanškroun-Žichlínské Předměstí, 56301"}, {"name": "Schaeffler Production CZ s.r.o. - Lanš. 2", "address": "Dvořákova 328, Lanškroun-Žichlínské Předměstí, 56301"}, {"name": "Schaeffler Production CZ s.r.o. - Svitavy", "address": "Dvořákova 328, Lanškroun-Žichlínské Předměstí, 56301"}, {"name": "Schäfer - Menk s.r.o.", "address": "Přeštínská 1415, Praha 5 - Radotín, 15300"}, {"name": "Schneider Electric, a.s.", "address": "Čížovská 447, Písek, 39701"}, {"name": "SCHOTT Termofrost s.r.o.", "address": "Krásno nad Bečvou, Zašovská 850, Valašské Meziříčí, 75701"}, {"name": "Schwarzmüller s.r.o.", "address": "Za Dálnicí 508, Žebrák, 26753"}, {"name": "SCHWING Stetter Ostrava s.r.o.", "address": "Moravská 1215/6, Vítkovice, 70300"}, {"name": "Siemens Mobility, s.r.o.", "address": "Siemensova 2715/1, Praha 5, Stodůlky, 15500"}, {"name": "Siemens s.r.o.", "address": "Siemensova 1, Praha 13, 15500"}, {"name": "Siemens, s.r.o.", "address": "Nádražní 25, Mohelnice, 78985"}, {"name": "SIKA CZ, s.r.o.", "address": "Bystrcká 1132/36, Brno, 62400"}, {"name": "SIKO Koupelny a.s.", "address": "Skorkovská 1310, Praha 9 - Kyje, 19800"}, {"name": "SILNICE ČÁSLAV - HOLDING, a.s.", "address": "Zbraslavice čp. 331, Zbraslavice, 28521"}, {"name": "SILNICE GROUP a.s.", "address": "Na Florenci 2116/15, Nové Město (Praha 1), 11000"}, {"name": "SILNICE HEJDA s. r. o.", "address": "Myslotínská 2168, Pelhřimov, 39301"}, {"name": "Silnice Topolany, a.s.", "address": "Nerudova 67/10, Chomutov (část), 43001"}, {"name": "Silnice Topolany, a.s. - vozidla managementu", "address": "Nerudova 67/10, Chomutov (část), 43001"}, {"name": "Silva Sp. z o.o. /Szczecinek Office ( KRONOSPAN )", "address": ""}, {"name": "SIMKOVIC.cz s.r.o.", "address": "ČSA 962, Velká Bystřice, 78353"}, {"name": "SIPRAL a.s.", "address": "Třebohostická 3165/5a, Strašnice (Praha 10), 100 00, 10000"}, {"name": "Sistema Poland Sp. z o.o. PL", "address": "ul. Turyňska 100, Tychy, 43-100"}, {"name": "SITECH Sp. z o.o.", "address": "Strefowa 2, POLKOWICE, 59-101"}, {"name": "SJG CZECH s.r.o.", "address": "Karviná - Staré Město, Na Novém poli 385/1a, PSČ 73301, Staré Město, 73301"}, {"name": "Skanska a.s.", "address": "Křižíkova 682/34a, Praha 8-Karlín, 18600"}, {"name": "Skanska SK a.s.", "address": "Krajná 29, Bratislava 2, 82104"}, {"name": "Skanska Transbeton, s.r.o.", "address": "Toužimská 664, Praha 9-Letňany, 19900"}, {"name": "SLABIHOUDEK s.r.o.", "address": "Brechtova 778/4, Praha 11 - Háje, 14900"}, {"name": "Slévárny Třinec, a.s.", "address": "Průmyslová 1001, Třinec (Staré Město), 73965"}, {"name": "SLEZSKÝ BETON a.s.", "address": "Orlovská 969/18, Ostrava-Muglinov (část), 71200"}, {"name": "SLOKOV spol. s r.o", "address": "Buničitá 1089, Vratimov, 73932"}, {"name": "Slovácká Fruta, a.s.", "address": "Na Drahách 814, Kunovice, 68604"}, {"name": "Slovácké vodárny a kanalizace, a.s.", "address": "Za Olšávkou 290, Uherské Hradiště, 68601"}, {"name": "SLOVAN Sławomir Ciupka PL", "address": "Piwowarska 15, Milówka, 34-360"}, {"name": "Služby města Postoloprty, s.r.o.", "address": "Tyršova 626, Postoloprty, 43942"}, {"name": "SMOLO CZ, s.r.o.", "address": "nám. Svobody 527, Třinec, 73961"}, {"name": "SMOLO CZ, s.r.o. - Komunál", "address": "Nám. Svobody 527, Třinec - Lyžbice, 73961"}, {"name": "SMOLO CZ, s.r.o. - Logistika", "address": "Nám. Svobody 527, Třinec - Lyžbice, 73961"}, {"name": "SMOLO CZ, s.r.o. - osobní vozidla", "address": "Nám. Svobody 527, Třinec - Lyžbice, 73961"}, {"name": "Smurfit Kappa Polska Sp. z o.o.  (Akce Konin)", "address": "Modła Królewska 17A, STARE MIASTO, 62-571"}, {"name": "Smurfit Kappa Polska Sp. z o.o. (Akce Drezdenko)", "address": "Modła Królewska 17A, 62-571 STARE MIASTO"}, {"name": "Smurfit Kappa Polska Sp. z o.o. (Akce Pruszcz Gdański)", "address": "Modła Królewska 17A, 62-571 STARE MIASTO"}, {"name": "Smurfit Kappa Polska Sp. z o.o. (Akce Pruszków)", "address": "Modła Królewska 17A, 62-571 STARE MIASTO"}, {"name": "Smurfit Kappa Polska Sp. z o.o. (Akce Warszawa)", "address": "Modła Królewska 17A, 62-571 STARE MIASTO"}, {"name": "Smurfit Westrock Czech s.r.o.", "address": "Skandinávská 1000, Žebrák, 26753"}, {"name": "Smurfit Westrock Olomouc s.r.o.", "address": "Průmyslová 799/18, Olomouc - Hodolany, 77900"}, {"name": "SOBOS CZ spol. s r.o.", "address": "Na Klinkách 414, Třebíč, 67401"}, {"name": "SOLID AGENCY CZ, s.r.o.", "address": "Sokolská 1263/24, Moravská Ostrava, 70200"}, {"name": "SOUKUP MILOŠ s.r.o.", "address": "Na láně 708, Zbýšov, 66411"}, {"name": "Spedice Hlinsko s.r.o.", "address": "Družstevní 1401, Hlinsko, 53901"}, {"name": "SPEDICE PAVEL ŠÍMA, spol. s r.o.", "address": "U Pily, budova na par.č. 1238/14, České Budějovice, 37001"}, {"name": "SPETRA CZ s.r.o.", "address": "Třanovice 278, Hnojník, 73953"}, {"name": "SP-KV AUTO s.r.o.", "address": "Plzeňská 150, Třemošná, 33011"}, {"name": "Spolkontrakt, spol. s r.o.", "address": "Hlinky 1333/13, Rousínov - Slavíkovice, 68301"}, {"name": "Správa silnic Olomouckého kraje, p.o.", "address": "Lipenská 120, OLOMOUC, 77211"}, {"name": "Správa železnic, státní organizace", "address": "Dlážděná 1003/7, Praha - 1 Nové město, 11000"}, {"name": "Spro stavby, obchod, dopravu a služby, s.r.o.", "address": "Dolní Novosadská č.p. 516/84, Nové Sady, 77900"}, {"name": "Spur, a.s.", "address": "třída Tomáše Bati 299, Zlín, 76302"}, {"name": "SPV - Beton s.r.o.", "address": "Lazecká 319/73, Olomouc, 77900"}, {"name": "SSI Schäfer s.r.o.", "address": "Tovární čp. 325, Hranice, 75301"}, {"name": "STALOTAS s.r.o.", "address": "Suderova 2079/22, Mariánské Hory, 70900"}, {"name": "STAMEDOP, a.s.", "address": "U Panelárny 538/1, Olomouc-Chválkovice, 77900"}, {"name": "STAŃCZAK Sp. z o.o.", "address": "Bohdanowicza 17/37, Warszawa, 02-127"}, {"name": "Stanislav Haruda", "address": "T.G.Masaryka 685, Kardašova Řečice, 37821"}, {"name": "Stanislav Hubáček", "address": "Dobrá Voda 50, Toužim, 36401"}, {"name": "STANKAR s.r.o.", "address": "Malé Karlovice 887, Velké Karlovice, 75606"}, {"name": "Stanna Stans s.r.o.", "address": "Vratimovská 624/11, Kunčičky, 71800"}, {"name": "STAPLAN  s.r.o.", "address": "Hrnčířská 257/43, Hlučín, 748 01"}, {"name": "STASPO, spol. s r.o.", "address": "Těšínská 254, Ostrava - Radvanice, 71600"}, {"name": "STAVAS spol. s r.o.", "address": "K Cihelnám 940/23, Plzeň - Černice, 32600"}, {"name": "Stavby IS, s.r.o.", "address": "Větrná 431, Plesná, 35135"}, {"name": "Stavby Matyásek, s.r.o.", "address": "Všechlapy 270, 288 02 Všechlapy, Všechlapy, 28802"}, {"name": "Stavební stroje a doprava, s.r.o.", "address": "Hrobce 178, Hrobce, 41183"}, {"name": "STAVMONTA spol. s r.o.", "address": "Hřbitovní 33, Plzeň 4-Doubravka, 31200"}, {"name": "STEL-INVEST s.r.o.", "address": "Sušilovo náměstí 50/28, Rousínov, 68301"}, {"name": "STILL ČR spol. s.r.o.", "address": "Štěrboholská 102, Praha 10-Hostivař, 10200"}, {"name": "STILL ČR spol. s.r.o. (Coca-Cola)", "address": "Štěrboholská 102, Praha 10-Hostivař, 10200"}, {"name": "STILL ČR spol. s.r.o. (TRCZ)", "address": "Štěrboholská 102, Praha 10-Hostivař, 10200"}, {"name": "STILL Polska Sp. z o.o", "address": "Składowa 6, 62-023 Żerniki, Polsko"}, {"name": "STILL Polska Sp. z o.o (Akce MAGNA FORMPOL Sp. z o.o. )", "address": "Składowa 6, 62-023 Żerniki, Polsko"}, {"name": "STILL Polska Sp. z o.o (Akce SemperTrans Sp. z o.o.)", "address": "Składowa 6, 62-023 Żerniki, Polsko"}, {"name": "STILL Polska Sp. z o.o (Akce Valeo Autosystemy sp. z o.o.)", "address": "Składowa 6, 62-023 Żerniki, Polsko"}, {"name": "Stín Kovo, s.r.o.", "address": "Bratří Hlaviců 122, Vsetín, 75501"}, {"name": "StonWood s. r. o.", "address": "Mlynská 796/25, Oslany, 97247"}, {"name": "STOPR, s.r.o.", "address": "U Jatek 77, Nové Město na Moravě, 59231"}, {"name": "STRABAG a.s.", "address": "Kačírkova 982/4, Jinonice, Praha 5, 15800"}, {"name": "Střední škola automobilní Holice", "address": "Nádražní 301, Holice, 53401"}, {"name": "STUDENT AGENCY k.s.", "address": "Náměstí Svobody 86/17, Brno Město, 60200"}, {"name": "SUJA, s.r.o.", "address": "Hamry 1330, Hluboká nad Vltavou, 37341"}, {"name": "Svatopluk Pešat ml.", "address": "Paskov, Náměstí 45, Paskov, 73921"}, {"name": "Svatopluk Tachecí", "address": "Dobříň 19, Dobříň, 41301"}, {"name": "SVÍTIL TRUCKING s.r.o.", "address": "Olomoucká 1015/4, Šumperk, 78701"}, {"name": "Swisspearl Česká republika a.s.", "address": "Lidická 302/91, Závodí-Beroun (část) x), 26601"}, {"name": "SYSTEM TRANSPORT SP. Z O.O.", "address": "ul. Wagrowska 6, Poznań, 61-369"}, {"name": "Szymon Hyla", "address": "Bednarska 803, Kamesznica, 34-383"}, {"name": "ŠenovNET s.r.o.", "address": "Václavovická 1073, Šenov u Ostravy, 73934"}, {"name": "Šilhánek a syn, a.s.", "address": "Samota 601, Kryry, 43981"}, {"name": "ŠKODA PARS k.s.", "address": "Žerotínova 1833/56, Šumperk, 78701"}, {"name": "Šlimar Jiří", "address": "Hlinky 13/1333, Rousínov, 68301"}, {"name": "Šmídl s.r.o.", "address": "Čs.armády 991, Žamberk, 56401"}, {"name": "Špatenka trans s.r.o.", "address": "Preislerova 95, Králův Dvůr u Berouna - Popovice, 267 01"}, {"name": "ŠROUBÁRNA MAREK s.r.o.", "address": "Vinohradská 1595/31, Praha 2, 12000"}, {"name": "Štefan Fusek", "address": "Svätý Štepán 9, Brumov-Bylnice, 76331"}, {"name": "Štěpán Vašinka", "address": "Raškovice 203, Raškovice, 73904"}, {"name": "T.I.M. trans, s.r.o.", "address": "Heřmanovice 205, Heřmanovice, 79374"}, {"name": "Tadeáš Kowalczyk", "address": "Smilovice 114, Smilovice, 73955"}, {"name": "TAKATA Parts s.r.o.", "address": "Na Ohradech 264, Rtyně v Podkrkonoší, 54233"}, {"name": "TARATRANS spol. s r.o.", "address": "Nám. Svobody 16, Dubí - Mstišov, 41703"}, {"name": "Tartak-Handel-Usługi „Drew-Lech” Leszek Cieślar", "address": "Jawornik 6, Wisla, 43-460"}, {"name": "Tawesco s.r.o.", "address": "Areál Tatry 1449/6, Kopřivnice, 74221"}, {"name": "Technické služby Krnov, s.r.o.", "address": "Stará 256/11, Krnov, 79401"}, {"name": "Technické služby Lanškroun, s.r.o.", "address": "Nádražní 33, Lanškroun, 56301"}, {"name": "TECHNICKÉ SLUŽBY MĚSTA OLOMOUCE, a.s.", "address": "Zamenhofova 783/34, OLOMOUC, 77211"}, {"name": "Technické služby Moravská Třebová s.r.o.", "address": "Zahradnická 21, Moravská Třebová, 57101"}, {"name": "Techniques Surfaces Czech Republic s r.o.", "address": "Chotěbořská 575, Ždírec nad Doubravou, 582 63"}, {"name": "Teknia Uhersky Brod, a.s.", "address": "Rybářská 2330,, Uherský Brod, 68801"}, {"name": "Tele-Fonika Kable Bydgoszcz S.A.", "address": "Fordońska 152, BYDGOSZCZ, 85-752"}, {"name": "Teplárna Strakonice, a.s.", "address": "Komenského 59, Strakonice II, 38601"}, {"name": "TESPRA Hodonín, s.r.o.", "address": "Velkomoravská 91, Hodonín, 69501"}, {"name": "test", "address": "ss, sss, 7255"}, {"name": "Test GX HD", "address": "V oblouku"}, {"name": "Teufelberger spol. s r.o.", "address": "Průmyslová 841, Veselí nad Lužnicí II, 39181"}, {"name": "TEVOS TREID, s.r.o.", "address": "Bystřice 1118, Bystřice, 73995"}, {"name": "THERMOSERVIS-TRANSPORT s.r.o.", "address": "Roviny 825/4, Brno, 64300"}, {"name": "TIM SA", "address": "Eugeniusza Kwiatkowskiego 24, SIECHNICE, 55-011"}, {"name": "TIRAD, s.r.o.", "address": "Šašovice 62, Želetava, 67526"}, {"name": "TLAK SMOLÍK, s.r.o.", "address": "Husinecká 903/10, PRAHA, 113 59"}, {"name": "T-Mobile Czech Republic a. s.", "address": "Tomíčkova 2144/1, Praha 4, 14900"}, {"name": "TMT transport, s.r.o.", "address": "Mlýnská 326/13, Brno-Trnitá, 60200"}, {"name": "Tobiáš Kypr", "address": "Podroužkova 1657/37, Poruba, 70800"}, {"name": "Tomáš Černý", "address": "Na Měkovině 559, Kolín V, 28002"}, {"name": "Tomáš Halenda", "address": "Královice 93, Královice, 27401"}, {"name": "Tomáš Hegr", "address": "Staré Oldřůvky 73, Budišov nad Budišovkou, 74787"}, {"name": "Tomáš Jeletz", "address": "Březinova 3665/36, Jihlava, 586 01"}, {"name": "Tomáš Kaniok s.r.o.", "address": "Raškovice 489, Raškovice, 73904"}, {"name": "Tomáš Lazar", "address": "Řehlovice 118, Řehlovice, 40313"}, {"name": "Tomáš Lipina", "address": "Frýdek-Místek - Frýdek, Nad Stadionem 127, PSČ 73801, Frýdek Místek, 73801"}, {"name": "Tomáš Lysák", "address": "Brumov-Bylnice - Brumov, Na Vyhlídce 1403, PSČ 76331, Brumov-Bylnice, 76331"}, {"name": "Tomáš Pleva", "address": "28. října 2484/35, Zábřeh, 78901"}, {"name": "TOMÁŠEK s.r.o.", "address": "Krouna 221, Krouna, 53943"}, {"name": "Toolmex Truck Sp. z o.o. (Akce Feniks Recykling)", "address": "1 Maja 49, Skarżysko-Kamienna, 26-110"}, {"name": "Toyota Material Handling CZ s.r.o.", "address": "K Vypichu 1049, Rudná, 25219"}, {"name": "TPC INDUSTRY CZECH REPUBLIC a.s.", "address": "Biskupský dvůr 2095/8, Nové Město, 11000"}, {"name": "TRABET s.r.o", "address": "Náměstí Prokopa Velikého 11/6, Ústí nad Labem, 40001"}, {"name": "TransDomix s.r.o.", "address": "Trtílkova 2806/2, Brno - Královo Pole, 61200"}, {"name": "Translogika s.r.o.", "address": "Sebuzínská 262, Ústí nad Labem, 40321"}, {"name": "Transport of Medicinal Products,s.r.o.", "address": "Svazarmovská 317, Frýdek-Místek, 73801"}, {"name": "TRANSPORTKAMION HOLEŠOV, s.r.o", "address": "Bartošova 756, Holešov, 76901"}, {"name": "Trcz, s.r.o._x000D_", "address": "Průmyslová 1165, Lovosice, 41002"}, {"name": "Trelleborg Bohemia, a.s. (RUBENA a.s.)", "address": "Akademika Bedrny 531/8a, Hradec Králové Věkoše, 50003"}, {"name": "Trestles, a.s._x000D_", "address": "Dětmarovice 1168, Dětmarovice, 73571"}, {"name": "TRIVIUM TRADE s.r.o.", "address": "Smržická 454/25, Držovice, 79607"}, {"name": "TROFIN s.r.o.", "address": "U Hadích lázní 1169/1, Teplice, 41501"}, {"name": "Trojek Group Sp. z o.o.", "address": "Wrocławska 63, 49-200 Grodków"}, {"name": "TROJEK, a.s.", "address": "Dudova 2585/4, Vinohrady (Praha 2) (část), 12000"}, {"name": "Truck Service Zlín a.s.", "address": "Panelová 289, Praha 9-Satalice, 19015"}, {"name": "TRUCK TRADE spol. s r. o.", "address": "Evropská čp. 677, Modřice, 66442"}, {"name": "TRUST Holding s.r.o.", "address": "K Zelinkovicím 206, Chlebovice, 73942"}, {"name": "Tryck wood s.r.o.", "address": "Náves 100, Šaratice, 68352"}, {"name": "Třinecké Železárny a.s.   (Vls 6301)", "address": "Průmyslová 1008, Třinec (Staré Město), 73965"}, {"name": "TŘINECKÉ ŽELEZÁRNY, a. s. - Kladno", "address": "Průmyslová 1000, Třinec - Staré Město, 73961"}, {"name": "TŘINECKÉ ŽELEZÁRNY, a. s. - provoz VK Koksovna a druhotné suroviny", "address": "Průmyslová 1000, Třinec - Staré Město, 73961"}, {"name": "TŘINECKÉ ŽELEZÁRNY, a. s. - provoz VL Doprava a expedice", "address": "Průmyslová 1000, Třinec - Staré Město, 73961"}, {"name": "TŘINECKÉ ŽELEZÁRNY, a. s. - Třinec", "address": "Průmyslová 1000, Třinec-Staré Město, 73961"}, {"name": "TS a.s.", "address": "17. listopadu 910, Frýdek Místek, 73801"}, {"name": "TS Bruntál, s.r.o.", "address": "Zeyerova 1489/12, Bruntál, 79201"}, {"name": "TSR Czech Republic s.r.o.", "address": "Sokolovská 192/79, Praha 8 - Karlín, 18600"}, {"name": "TSR Slovakia, s.r.o.", "address": "Hrabové 313, Bytča, 01401"}, {"name": "TUFÍR - PRO s.r.o.", "address": "Na Drahách 881, Kunovice, 68604"}, {"name": "Tymphany Acoustic Technology Europe, s.r.o.", "address": "Průmyslový park 305, Kopřivnice, 74221"}, {"name": "U.S. Steel Košice, s.r.o.", "address": "Vstupný areál U. S. Steel, Košice 1, 04001"}, {"name": "UNIDATAZ s.r.o.", "address": "Palliardiho 1367/23, Znojmo, 66902"}, {"name": "UNIKOV Steel spol. s r.o.", "address": "Průmyslová 1582, Bzenec (část), 69685"}, {"name": "UNILEASING a.s.", "address": "Randova 214, Klatovy, 33901"}, {"name": "UNINAB, spol. s r.o.", "address": "Ostravská 844, Sviadnov, 73925"}, {"name": "UNITRANSPORT s.r.o.", "address": "Tyršova 545, Osek, 41705"}, {"name": "USŁUGI TRANSPORTOWE HANDEL DREWNEM I TARCICĄ", "address": "Łostówka 57, MSZANA DOLNA, 34-730"}, {"name": "USŁUGI TRANSPORTOWE HANDEL DREWNEM I TARCICĄ KNAPCZYK PIOTR", "address": "Łostówka 57, MSZANA DOLNA, 34-730"}, {"name": "USŁUGI TRANSPORTOWE SPEDYCJA ALEKSANDER JABROCKI", "address": "ŁOMNICA ZDRÓJ 306, ŁOMNICA ZDRÓJ, 33-350"}, {"name": "V - stav group spol. s.r.o.", "address": "Dolní Novosadská 41/26, Olomouc, 77900"}, {"name": "Václav Antoniszyn", "address": "Hornická 54, Lahošť, 41725"}, {"name": "Václav Dobrozemský", "address": "Zašová 762, Zašová, 756 51"}, {"name": "Václav Fídler", "address": "Zubrnická 843/4, Praha 9 - Prosek, 190 00"}, {"name": "Václav Hejkal", "address": "Jeronýmova 923, Havlíčkův Brod, 58001"}, {"name": "Václav Jiránek", "address": "17. listopadu 1382, Mladá Boleslav II, 29301"}, {"name": "Václav Kadlec", "address": "Pražská 3498, Havlíčkův Brod, 58001"}, {"name": "Václav Koláček", "address": "Přestavlky 10, Přestavlky, 75002"}, {"name": "Václav Kraus", "address": "STARÉ MÍSTO 68, Jičín, 50601"}, {"name": "Václav Matoušek", "address": "Sluneční 224, Zruč - Senec, 330 08"}, {"name": "Václav Munzar", "address": "Matušova 83/4, Rumburk 1, 40801"}, {"name": "Václav Nedvěd", "address": "Milevská 407, Kladruby, 34961"}, {"name": "Valašskokloboucké služby s.r.o.", "address": "Brumovská 522, Valašské Klobouky, 76601"}, {"name": "VALENS, s.r.o.", "address": "Kollárova 634/6, Kroměříž, 76701"}, {"name": "VALKO DOPRAVA, s.r.o.", "address": "Hlučínská 92, Dolní Benešov, 74722"}, {"name": "Valmont ČR", "address": "Brno"}, {"name": "Varroc Lighting Systems, s.r.o.", "address": "Šenov u Nového Jičína, Suvorovova 195, Šenov u Nového Jičína, 74242"}, {"name": "VATEX CARGO s.r.o.", "address": "Jiříkovská 1784/11, Šlapanice, 66451"}, {"name": "VATEX EU s.r.o.", "address": "Jiříkovská 1784/11, Šlapanice, 66451"}, {"name": "VELA WOOD s.r.o.", "address": "Hlucholazská 399, Mikulovice, 79084"}, {"name": "VENA-TRADE, s.r.o.", "address": "Moravská Huzová 8, Štěpánov, 78313"}, {"name": "Věra Černá", "address": "Na Měkovině 559, Kolín, 28002"}, {"name": "Veronika Zavřelová", "address": "Víta Nejedlého 545/37, Dědice - Vyškov, 68201"}, {"name": "Vertimber Wood s.r.o. - lesovozy", "address": "Dobrá 240, Dobrá, 73951"}, {"name": "Vertiv Czech Republic s.r.o.", "address": "Nišovice 9, Nišovice, 38701"}, {"name": "VESTAPRA czech s.r.o.", "address": "Orlová - Poruba, M. Ryšky 701, PSČ 73514, Poruba, 73514"}, {"name": "VESUVIUS ČESKÁ REPUBLIKA, a.s.", "address": "Průmyslová 726, Třinec - Konská, 73961"}, {"name": "Veterinární a farmaceutická univerzita Brno", "address": "Palackého třída 1947/3, Brno - Královo Pole, 61200"}, {"name": "Veterinární univerzita Brno ŠZP Nový Jičín", "address": "E. Krásnohorské 178, Šenov u Nového Jičína (část), 74242"}, {"name": "VHS plus, spol. s r.o.", "address": "Dobšická 3580/17, Znojmo, 67182"}, {"name": "Vibracoustic CZ, s.r.o.", "address": "Nad Jatkami 3562, Mělník, 27601"}, {"name": "Vik Václav", "address": "Křižanov 52, Hořičky, 55205"}, {"name": "Vítězslav Bednář", "address": "Bezručova 1768, Frýdek Místek, 73801"}, {"name": "Vítězslav Kocur", "address": "Bystřička 376, Bystřička, 75624"}, {"name": "Vítězslav Růžička", "address": "SUDOVO HLAVNO 75, Kostelní Hlavno, 29476"}, {"name": "VÍTKOVICE ACCOUNTING a.s.", "address": "Ruská 2887/101, Vítkovice, 70300"}, {"name": "VÍTKOVICE Doprava, a.s.", "address": "1. máje 3302/102a, Moravská Ostrava, 70300"}, {"name": "VITRABLOK, s.r.o.", "address": "Bílinská 42, Duchcov, 41901"}, {"name": "VK AUTOSERVIS s.r.o", "address": "RYCHNOVEK 77, Rychnovek, 55225"}, {"name": "Vladan Vítek", "address": "Vedrovice 233, LODĚNICE U MORAVSKÉHO KRUMLOVA, 671 75"}, {"name": "Vladimír Dostál - zemní práce", "address": "Věry Pánkové 829/2, Olomouc, 77900"}, {"name": "Vladimír Klazar", "address": "Živanice 179, Živanice, 53342"}, {"name": "Vladimír Rychlý", "address": "Cibotín 15, Česká Bělá, 583 01"}, {"name": "Vladimír Švik", "address": "Komenského 609, Velké Losiny, 78815"}, {"name": "Vladimíra Macháčková", "address": "Vlkoš - Kanovsko, 9. května 4/21, Vlkoš u Přerova, 75119"}, {"name": "Vladislav Bíro", "address": "Sukova 318, Čeperka - OPATOVICE NAD LABEM, 533 45"}, {"name": "Vladislav Havránek", "address": "Masarykova 244, Brankovice, 68333"}, {"name": "Vlastimil Frencl", "address": "Divišova 2825/20, Karviná-Hranice, 73301"}, {"name": "Vlastislav Rybníček", "address": "Olešnice, Moravská strana 456, Olešnice, 67974"}, {"name": "VMI Silesia s.r.o.", "address": "Pelclova čp. 2500/5, Ostrava-Moravská Ostrava, 702 00"}, {"name": "VMT Trans s.r.o.", "address": "Sadová 612, Frýdek-Místek, 73801"}, {"name": "VODÁREK TRANSPORT a. s.", "address": "Záhlinická 1397, Hulín, 768 24"}, {"name": "Vodohospodářská zařízení Šumperk, a.s.", "address": "Jílová 2769/6, Šumperk, 78701"}, {"name": "Vodohospodářské a dopravní stavby Vsetín s.r.o.", "address": "č.p. 28, 756 53 Vidče, Vidče, 75653"}, {"name": "Vodohospodářské služby a servis, a.s.", "address": "Dimitrovova 1619, Sokolov, 35644"}, {"name": "Vodohospodářské stavby Javorník-CZ s.r.o.", "address": "Benátky 17, Veselí nad Moravou, 69801"}, {"name": "Vodohospodářské stavby, společnost s ručením omezeným", "address": "Křižíkova 2393, Teplice, 41501"}, {"name": "Vodohospodářské stavby, společnost s ručením omezeným - Divize Plzeň", "address": "Křižíkova 2393, Teplice, 41501"}, {"name": "voestalpine Profilform s.r.o.", "address": "Tovární 723/4, Vyškov-Předměstí, 68201"}, {"name": "VOGELTANZ CARGO s.r.o", "address": "HLOHOVÁ 109, Staňkov, 34561"}, {"name": "Voith Turbo Power Transmission CZ s.r.o.", "address": "Vídeňská 231/130,, Brno, 61900"}, {"name": "Vojenské lesy a statky ČR, s.p.", "address": "Pod Juliskou 1621/5, Praha 6 - Dejvice, 16000"}, {"name": "VOJENSKÉ LESY A STATKY ČR-LESNÍ SPRÁVA Lipník, s.p.", "address": "Pod Juliskou 1621/5, Dejvice (část), 16000"}, {"name": "VOP CZ, s.p.", "address": "Dukelská 102, Šenov u Nového Jičína, 74242"}, {"name": "VOSTAV MORAVA a.s.", "address": "Kuršova 468/28, Svinov, 721 00 Ostrava, Svinov, 72100"}, {"name": "VS-EKOPRAG s.r.o", "address": "U Slavie 610, Dobříš, 26301"}, {"name": "Východočeské plynárenské strojírny, a.s.", "address": "Rosice 16, Rosice, 53834"}, {"name": "Výtahy-Elektro Žižka spol. s r.o.", "address": "Nové Dvory - Kamenec 3605, Frýdek Místek, 73801"}, {"name": "W - CHARIOTS, a.s.", "address": "Frýdecká 272, Staré Město, Třinec, 73961"}, {"name": "Waclavík s.r.o.", "address": "Ostrava - Přívoz, Dobrovského 874/29, PSČ 702 00, Přívoz, 70200"}, {"name": "Waldera s.r.o.", "address": "Vlárská 321, Bylnice, Brumov-Bylnice, 76331"}, {"name": "Walstead Moraviapress s.r.o.", "address": "U Póny 3061, Břeclav, 69002"}, {"name": "Wera Werk s.r.o.", "address": "Nádražní 1403, Bystřice nad Pernštejnem, 59301"}, {"name": "WeZetPro s.r.o.", "address": "1. máje 1830, Frýdek Místek, 73801"}, {"name": "WIDLATEX Sp. z o.o. PL", "address": "Stokrotek 1a, Katowice, 40-748"}, {"name": "WIDLATEX Sp. z o.o. PL (Akce BCUBE Poland Services Sp. z o.o.)", "address": "Stokrotek 1a, Katowice, 40-748"}, {"name": "WIDLATEX Sp. z o.o. PL (Akce MAN&BUS)", "address": "Stokrotek 1a, Katowice, 40-748"}, {"name": "Wienerberger slovenské tehelne, spol. s r. o.", "address": "Tehelná 5, Zlaté Moravce 1, 95301"}, {"name": "WILDNER - WIP s.r.o.", "address": "Junácká 580/28, Ostrava - Stará Bělá, 72400"}, {"name": "WINART s.r.o.", "address": "Botanická 606/24, Brno, 602 00, Brno-Město, 60200"}, {"name": "Windmöller & Hölscher Machinery k.s.", "address": "Háj 374, Kralice na Hané, 79812"}, {"name": "WINDSOR ENTERPRISE s. r. o.", "address": "Zelenářská 23/7, Znojmo, 66902"}, {"name": "wittory s.r.o.", "address": "Světlá 332, Světlá Hora, 79331"}, {"name": "Wobau pasivní stavby, s.r.o.", "address": "Poděbradova 3273/101a, Moravská Ostrava, 70200"}, {"name": "WORLD-WIDE PROSPECT s.r.o.", "address": "Na rybníkách 197, 742 01 Suchdol nad Odrou, Suchdol nad Odrou, 74201"}, {"name": "Y S S E N - spol. s r.o.", "address": "Dolní Litvínov 5, Dolní Litvínov, 43601"}, {"name": "YALE CZ s.r.o.", "address": "Komerční 545, Nupaky, 25101"}, {"name": "YOGOUT s.r.o.", "address": "Rybná 716/24, Staré Město, 110 00 Praha, Staré Město, 11000"}, {"name": "ZAHIR - Husák, s.r.o.", "address": "Na Výhoně 487, Sokolnice, 664 52"}, {"name": "Zakład Usług Leśny Handlowych i Transportowych \"ZAK\" Elżbieta Żak", "address": "Piaskowa 1A, RADOSZYCE, 26-230"}, {"name": "ZAKŁAD USŁUG TARTACZNYCH ŁUKASZ SITNIK", "address": "Osiedle Jana Pawła II 15, FRYSZTAK, 38-130"}, {"name": "ZANIJA s.r.o.", "address": "K zahrádkám 991/13, Praha 5 - Stodůlky, 15500"}, {"name": "Západočeské konzumní družstvo Sušice", "address": "náměstí Svobody 135, Sušice I, 34201"}, {"name": "Zdeněk Doubrava", "address": "Skřivánčí 312, Chlumec, 40339"}, {"name": "Zdeněk Hanuš", "address": "LHOTA 48, Nové Město nad Metují, 54901"}, {"name": "Zdeněk Kachtík", "address": "Liptál 262, LIPTÁL, 756 31"}, {"name": "Zdeněk Kocháň", "address": "Do Humen I 428, Zlín - Štípa, 76314"}, {"name": "Zdeněk Šimánek", "address": "Vracovice č.p. 28, Vracovice, 258 01"}, {"name": "Zdeněk Šopík, s.r.o.", "address": "Butovická 14, STUDÉNKA  - BUTOVICE, 74213"}, {"name": "ZEMCAT s.r.o.", "address": "Valtířov 86, Velké Březno, 40002"}, {"name": "Zemědělské Družstvo Jeseník", "address": "ul. Šumperská 118, Jeseník, 79001"}, {"name": "Zemědělské družstvo vlastníků Nošovice", "address": "Nošovice 128, Nošovice, Dobrá, 73951"}, {"name": "Zemědělské služby Dynín, a.s.", "address": "DYNÍN 92, Dynín, 37364"}, {"name": "Zemní a dopravní stavby Hrdý Milan, s.r.o.", "address": "Dobrná 48, Dobrná, 40741"}, {"name": "Zemní práce Vávra s.r.o.", "address": "Žopy 208, Holešov, 76901"}, {"name": "ZEMPRAVLACH s.r.o.", "address": "Dětkovice 100, Dětkovice, 79804"}, {"name": "Zeppelin Polska Sp. z o.o. (akce Granges Konin S.A.)", "address": "Klonaowa 10, 05-830 KAJETANY"}, {"name": "Zeppelin Polska Sp. z o.o. (akce Saferoad Pomerania Szczecin)", "address": "Klonaowa 10, 05-830 KAJETANY"}, {"name": "Zeppelin Polska Sp. z o.o. (akce VESTAS BLADES (POLAND) Sp. z o.o.)", "address": "Klonaowa 10, 05-830 KAJETANY"}, {"name": "ZETO TRANS, spol. s r.o.", "address": "Vodařská 232/2, Brno - Horní Heršpice, 61900"}, {"name": "ZETOR KOVÁRNA, s.r.o.", "address": "Trnkova 3060/111, Brno-Líšeň, 62800"}, {"name": "ZETOR TRACTORS a.s.", "address": "Trnkova 3060/111, Brno-Líšeň, 62800"}, {"name": "ZEVETA MACHINERY a.s.", "address": "Tovární 532, Bojkovice, 68771"}, {"name": "ZF Staňkov, s.r.o.", "address": "Ohučov 25, Ohučov, 34561"}, {"name": "Zikán trans s.r.o.", "address": "Mořina 22, Mořina, 26717"}, {"name": "ZOD Haná, družstvo se sídlem ve Švábenicích", "address": "Švábenice 348, Ivanovice na Hané, 68323"}, {"name": "ZOO Brno a stanice zájmových činností, příspěvková organizace", "address": "U zoologické zahrady 46, Brno, 63500"}, {"name": "ZPC Zloty Klos", "address": "Os. Barwinek 28, Kielce, 25-113"}, {"name": "ZPUE S.A.", "address": "Jędrzejowska 79c, 29-100 WŁOSZCZOWA, 6561494014"}, {"name": "ZPzeman s.r.o.", "address": "K terminálu 745/1a, Brno, 61900"}, {"name": "ŽSD a.s.", "address": "Brněnská 1050, Modřice, 66442"}];
+
+    let technicians = safeGet('tech_db_v40', defaultTechnicians);
+    let savedCompanies = safeGet('company_db_v40', []);
+    let customCompanies = [...defaultCompanies];
+    
+    if (Array.isArray(savedCompanies) && savedCompanies.length > 0) {
+      savedCompanies.forEach(sc => {
+        if (!customCompanies.some(c => c.name === sc.name)) {
+          customCompanies.push(sc);
+        }
+      });
+    }
+
+    let leafletMap = null, routePolyline = null, returnPolyline = null, mapMarkers = [], currentCalculation = null;
+
+    const techSelect = document.getElementById('tech-select');
+    const startInput = document.getElementById('start-location');
+    const targetInput = document.getElementById('target-location');
+    const viaContainer = document.getElementById('via-container');
+    const routeModeSelect = document.getElementById('route-mode');
+    const roundTripCheck = document.getElementById('round-trip');
+    const statusMsg = document.getElementById('status-msg');
+    const resultCard = document.getElementById('result-card');
+    const targetSuggestions = document.getElementById('target-suggestions');
+    const quickTargetSelect = document.getElementById('quick-target-select');
+
+    function initTechs() {
+      techSelect.innerHTML = '<option value="">-- Vyberte technika --</option>';
+      technicians.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = `${t.name} (${t.start})`;
+        techSelect.appendChild(opt);
+      });
+    }
+
+    techSelect.addEventListener('change', (e) => {
+      const selected = technicians.find(t => t.id === e.target.value);
+      if (selected) {
+        startInput.value = `${selected.start} [GPS: ${selected.lat}, ${selected.lon}]`;
+        startInput.dataset.lat = selected.lat;
+        startInput.dataset.lon = selected.lon;
+      } else {
+        startInput.value = '';
+        delete startInput.dataset.lat;
+        delete startInput.dataset.lon;
+      }
+    });
+
+    function renderQuickTargetDropdown() {
+      quickTargetSelect.innerHTML = '<option value="">-- Rychlá volba z databáze firem --</option>';
+      customCompanies.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.address;
+        if (c.lat && c.lon) {
+          opt.dataset.lat = c.lat;
+          opt.dataset.lon = c.lon;
+        }
+        opt.textContent = `${c.name} (${c.address})`;
+        quickTargetSelect.appendChild(opt);
+      });
+    }
+
+    quickTargetSelect.addEventListener('change', (e) => {
+      const selectedOpt = quickTargetSelect.options[quickTargetSelect.selectedIndex];
+      if (e.target.value) {
+        targetInput.value = e.target.value;
+        if (selectedOpt.dataset.lat && selectedOpt.dataset.lon) {
+          targetInput.dataset.lat = selectedOpt.dataset.lat;
+          targetInput.dataset.lon = selectedOpt.dataset.lon;
+        } else {
+          delete targetInput.dataset.lat;
+          delete targetInput.dataset.lon;
+        }
+        targetSuggestions.classList.add('hidden');
+      }
+    });
+
+    function populateViaDropdown(selectEl) {
+      selectEl.innerHTML = '<option value="">-- Rychlá volba průjezdu z databáze --</option>';
+      customCompanies.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.address;
+        if (c.lat && c.lon) {
+          opt.dataset.lat = c.lat;
+          opt.dataset.lon = c.lon;
+        }
+        opt.textContent = `${c.name} (${c.address})`;
+        selectEl.appendChild(opt);
+      });
+    }
+
+    targetInput.addEventListener('input', (e) => {
+      delete targetInput.dataset.lat;
+      delete targetInput.dataset.lon;
+      const val = e.target.value.trim().toLowerCase();
+      if (val.length < 1) { targetSuggestions.classList.add('hidden'); return; }
+      const matches = customCompanies.filter(c => c.name.toLowerCase().includes(val) || c.address.toLowerCase().includes(val)).slice(0, 30);
+      if (matches.length > 0) {
+        targetSuggestions.innerHTML = '';
+        matches.forEach(m => {
+          const div = document.createElement('div');
+          div.className = 'p-2 hover:bg-red-50 cursor-pointer border-b border-slate-100 last:border-0 text-xs';
+          div.innerHTML = `<strong class="text-red-700">${m.name}</strong><br><span class="text-[10px] text-slate-500">${m.address}</span>`;
+          div.addEventListener('click', () => {
+            targetInput.value = m.address;
+            if (m.lat && m.lon) {
+              targetInput.dataset.lat = m.lat;
+              targetInput.dataset.lon = m.lon;
+            } else {
+              delete targetInput.dataset.lat;
+              delete targetInput.dataset.lon;
+            }
+            targetSuggestions.classList.add('hidden');
+          });
+          targetSuggestions.appendChild(div);
+        });
+        targetSuggestions.classList.remove('hidden');
+      } else { targetSuggestions.classList.add('hidden'); }
+    });
+
+    document.getElementById('btn-add-via').addEventListener('click', () => {
+      const div = document.createElement('div');
+      div.className = 'bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-1.5 relative';
+      div.innerHTML = `
+        <div class="flex gap-1.5 items-center">
+          <div class="relative flex-1">
+            <input type="text" autocomplete="off" placeholder="Průjezdní bod / firma..." class="via-input w-full bg-white border border-slate-300 text-slate-800 text-xs rounded-lg p-2 pl-7 focus:ring-2 focus:ring-red-500 font-medium">
+            <i class="fa-solid fa-map-pin absolute left-2.5 top-2.5 text-amber-500 text-xs"></i>
+          </div>
+          <button type="button" class="btn-search-via bg-red-600 hover:bg-red-700 text-white text-xs px-2.5 py-2 rounded-lg transition" title="Vyhledat adresu">
+            <i class="fa-solid fa-magnifying-glass"></i>
+          </button>
+          <button type="button" class="btn-remove-via text-slate-400 hover:text-red-500 p-1.5"><i class="fa-solid fa-trash-can"></i></button>
+        </div>
+        <div class="via-suggestions hidden bg-white border rounded-lg shadow-xl p-1 text-xs max-h-32 overflow-y-auto z-20"></div>
+        <div class="relative">
+          <select class="via-quick-select w-full bg-white border border-slate-200 text-slate-600 text-[11px] rounded-lg p-1.5 pr-7 appearance-none cursor-pointer">
+          </select>
+          <i class="fa-solid fa-chevron-down absolute right-2.5 top-2 text-slate-400 text-[10px] pointer-events-none"></i>
+        </div>
+      `;
+      viaContainer.appendChild(div);
+
+      const inp = div.querySelector('.via-input');
+      const btnSearch = div.querySelector('.btn-search-via');
+      const sug = div.querySelector('.via-suggestions');
+      const viaSelect = div.querySelector('.via-quick-select');
+
+      populateViaDropdown(viaSelect);
+
+      viaSelect.addEventListener('change', (e) => {
+        const selectedOpt = viaSelect.options[viaSelect.selectedIndex];
+        if (e.target.value) {
+          inp.value = e.target.value;
+          if (selectedOpt.dataset.lat && selectedOpt.dataset.lon) {
+            inp.dataset.lat = selectedOpt.dataset.lat;
+            inp.dataset.lon = selectedOpt.dataset.lon;
+          } else {
+            delete inp.dataset.lat;
+            delete inp.dataset.lon;
+          }
+          sug.classList.add('hidden');
+        }
+      });
+
+      inp.addEventListener('input', (e) => {
+        delete inp.dataset.lat;
+        delete inp.dataset.lon;
+        const val = e.target.value.trim().toLowerCase();
+        if (val.length < 1) { sug.classList.add('hidden'); return; }
+        const matches = customCompanies.filter(c => c.name.toLowerCase().includes(val) || c.address.toLowerCase().includes(val)).slice(0, 30);
+        if (matches.length > 0) {
+          sug.innerHTML = '';
+          matches.forEach(m => {
+            const item = document.createElement('div');
+            item.className = 'p-1.5 hover:bg-red-50 cursor-pointer border-b border-slate-100 text-[11px]';
+            item.innerHTML = `<strong>${m.name}</strong> - <span class="text-slate-500">${m.address}</span>`;
+            item.addEventListener('click', () => {
+              inp.value = m.address;
+              if (m.lat && m.lon) {
+                inp.dataset.lat = m.lat;
+                inp.dataset.lon = m.lon;
+              } else {
+                delete inp.dataset.lat;
+                delete inp.dataset.lon;
+              }
+              sug.classList.add('hidden');
+            });
+            sug.appendChild(item);
+          });
+          sug.classList.remove('hidden');
+        } else { sug.classList.add('hidden'); }
+      });
+
+      btnSearch.addEventListener('click', async () => {
+        const q = inp.value.trim();
+        if (!q) return;
+        statusMsg.classList.remove('hidden');
+        const res = await geocode(q);
+        statusMsg.classList.add('hidden');
+        if (res) {
+          inp.value = res.address;
+          if (res.lat && res.lon) {
+            inp.dataset.lat = res.lat;
+            inp.dataset.lon = res.lon;
+          }
+        }
+      });
+
+      div.querySelector('.btn-remove-via').addEventListener('click', () => div.remove());
+    });
+
+    /* INTELIGENTNÍ GEOKODÉR S PŘÍMOU PODPOROU GPS SOUŘADNICE */
+    async function geocode(query, explicitLat, explicitLon) {
+      if (explicitLat && explicitLon && !isNaN(explicitLat) && !isNaN(explicitLon)) {
+        return { name: query, address: query, lat: parseFloat(explicitLat), lon: parseFloat(explicitLon) };
+      }
+
+      if (!query) return null;
+      const cleanQ = query.trim().toLowerCase();
+
+      const compMatch = customCompanies.find(c => c.address.toLowerCase().includes(cleanQ) || c.name.toLowerCase().includes(cleanQ));
+      if (compMatch && compMatch.lat && compMatch.lon) {
+        return { name: compMatch.name, address: compMatch.address, lat: parseFloat(compMatch.lat), lon: parseFloat(compMatch.lon) };
+      }
+
+      if (MAPY_CZ_API_KEY && MAPY_CZ_API_KEY.trim() !== "") {
+        try {
+          const mapyUrl = `https://api.mapy.cz/v1/suggest?lang=cs&limit=1&type=regional.address&query=${encodeURIComponent(query)}`;
+          const resMapy = await fetch(mapyUrl, {
+            headers: { 'X-Mapy-Api-Key': MAPY_CZ_API_KEY.trim() }
+          });
+          const dataMapy = await resMapy.json();
+
+          if (dataMapy && dataMapy.items && dataMapy.items.length > 0) {
+            const item = dataMapy.items[0];
+            return {
+              name: item.name || query,
+              address: `${item.name}, ${item.location}`.trim().replace(/^,\s*/, ''),
+              lat: item.position.lat,
+              lon: item.position.lon
+            };
+          }
+        } catch (err) {
+          console.warn('Mapy.cz API selhalo, přepínám na zálohu:', err);
+        }
+      }
+
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=cz,sk,de,at,pl&limit=1&addressdetails=1`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'cs' } });
+        const data = await res.json();
+
+        if (data && data.length > 0) {
+          const item = data[0];
+          const addr = item.address;
+          let label = item.display_name;
+
+          if (addr) {
+            const street = addr.road || addr.pedestrian || addr.suburb || '';
+            const number = addr.house_number || addr.conscriptionnumber || '';
+            const city = addr.city || addr.town || addr.village || '';
+            if (street || number || city) {
+              label = `${street} ${number}, ${city}`.trim().replace(/^,\s*/, '');
+            }
+          }
+
+          return {
+            name: label || query,
+            address: label || query,
+            lat: parseFloat(item.lat),
+            lon: parseFloat(item.lon)
+          };
+        }
+      } catch (err) {
+        console.warn('Záložní geokódování selhalo:', err);
+      }
+
+      return null;
+    }
+
+    document.getElementById('btn-search-target').addEventListener('click', async () => {
+      const q = targetInput.value.trim();
+      if (!q) return;
+      statusMsg.classList.remove('hidden');
+      const res = await geocode(q, targetInput.dataset.lat, targetInput.dataset.lon);
+      statusMsg.classList.add('hidden');
+      if (res) targetInput.value = res.address;
+    });
+
+    function initMap() {
+      if (!leafletMap) {
+        leafletMap = L.map('map').setView([49.8, 15.5], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(leafletMap);
+      }
+    }
+
+    function getModeLineStyle(mode) {
+      if (mode === 'shortest') return { color: '#059669', weight: 5, opacity: 0.9 };
+      if (mode === 'regular') return { color: '#d97706', weight: 5, opacity: 0.9 };
+      return { color: '#dc2626', weight: 5, opacity: 0.85 };
+    }
+
+    document.getElementById('btn-calculate').addEventListener('click', async () => {
+      const techId = techSelect.value;
+      const startText = startInput.value.trim();
+      const targetText = targetInput.value.trim();
+
+      if (!techId || !startText || !targetText) {
+        alert('Vyberte technika a zadejte cílové místo.');
+        return;
+      }
+
+      statusMsg.classList.remove('hidden');
+      resultCard.classList.add('hidden');
+
+      const waypoints = [];
+      waypoints.push({
+        query: startText,
+        lat: startInput.dataset.lat,
+        lon: startInput.dataset.lon
+      });
+
+      document.querySelectorAll('.via-input').forEach(i => {
+        if (i.value.trim()) waypoints.push({ query: i.value.trim(), lat: i.dataset.lat, lon: i.dataset.lon });
+      });
+
+      waypoints.push({ query: targetText, lat: targetInput.dataset.lat, lon: targetInput.dataset.lon });
+
+      const coords = [];
+      for (const pt of waypoints) {
+        const r = await geocode(pt.query, pt.lat, pt.lon);
+        if (r && !isNaN(r.lat) && !isNaN(r.lon)) {
+          coords.push({ name: pt.query, lat: r.lat, lon: r.lon });
+        } else {
+          statusMsg.classList.add('hidden');
+          alert(`Nenalezeny souřadnice pro místo: "${pt.query}". Zkuste prosím adresu upřesnit.`);
+          return;
+        }
+      }
+
+      const locs = coords.map(c => `${c.lon},${c.lat}`).join(';');
+      const mode = routeModeSelect.value;
+      const isRound = roundTripCheck.checked;
+      
+      try {
+        const resThere = await fetch(`https://router.project-osrm.org/route/v1/driving/${locs}?overview=full&geometries=geojson`);
+        const dataThere = await resThere.json();
+
+        if (dataThere.code !== 'Ok' || !dataThere.routes || !dataThere.routes.length) {
+          statusMsg.classList.add('hidden');
+          alert('Chyba při výpočtu trasy.');
+          return;
+        }
+
+        const routeThere = dataThere.routes[0];
+        let distThereKm = Math.round(routeThere.distance / 1000);
+        let durThereMin = Math.round(routeThere.duration / 60);
+
+        if (mode === 'shortest') { distThereKm = Math.round(distThereKm * 0.94); durThereMin = Math.round(durThereMin * 1.08); }
+        else if (mode === 'regular') { distThereKm = Math.round(distThereKm * 0.98); durThereMin = Math.round(durThereMin * 1.15); }
+
+        let totalDistanceKm = distThereKm;
+        let totalDurationMin = durThereMin;
+
+        let routeBack = null;
+        if (isRound) {
+          const startPt = coords[0];
+          const endPt = coords[coords.length - 1];
+          const locsBack = `${endPt.lon},${endPt.lat};${startPt.lon},${startPt.lat}`;
+
+          try {
+            const resBack = await fetch(`https://router.project-osrm.org/route/v1/driving/${locsBack}?overview=full&geometries=geojson`);
+            const dataBack = await resBack.json();
+            if (dataBack.code === 'Ok' && dataBack.routes && dataBack.routes.length) {
+              routeBack = dataBack.routes[0];
+              totalDistanceKm += Math.round(routeBack.distance / 1000);
+              totalDurationMin += Math.round(routeBack.duration / 60);
+            } else {
+              totalDistanceKm += distThereKm;
+              totalDurationMin += durThereMin;
+            }
+          } catch (e) {
+            totalDistanceKm += distThereKm;
+            totalDurationMin += durThereMin;
+          }
+        }
+
+        statusMsg.classList.add('hidden');
+
+        const hrs = Math.floor(totalDurationMin / 60);
+        const mins = totalDurationMin % 60;
+        const durationFormatted = hrs > 0 ? `${hrs} h ${mins} min` : `${mins} min`;
+
+        const techObj = technicians.find(t => t.id === techId);
+        const modeLabel = routeModeSelect.options[routeModeSelect.selectedIndex].text;
+
+        document.getElementById('res-distance').textContent = `${totalDistanceKm} km`;
+        document.getElementById('res-duration').textContent = durationFormatted;
+        document.getElementById('res-path-text').textContent = coords.map(c => c.name.split('[')[0].trim()).join(' → ') + (isRound ? ' 🔄 ' + coords[0].name.split('[')[0].trim() : '');
+        document.getElementById('res-mode-text').textContent = isRound ? `${modeLabel} (Tam) + Přímá cesta zpět` : modeLabel;
+
+        if (isRound) document.getElementById('res-round-badge').classList.remove('hidden');
+        else document.getElementById('res-round-badge').classList.add('hidden');
+
+        let gmapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${coords[0].lat},${coords[0].lon}&destination=${encodeURIComponent(coords[coords.length - 1].name)}`;
+        if (coords.length > 2) {
+          const viaStr = coords.slice(1, -1).map(c => encodeURIComponent(c.name)).join('|');
+          gmapsUrl += `&waypoints=${viaStr}`;
+        }
+        document.getElementById('btn-google-maps').href = gmapsUrl;
+
+        resultCard.classList.remove('hidden');
+
+        initMap();
+        setTimeout(() => {
+          leafletMap.invalidateSize();
+          if (routePolyline) leafletMap.removeLayer(routePolyline);
+          if (returnPolyline) leafletMap.removeLayer(returnPolyline);
+          mapMarkers.forEach(m => leafletMap.removeLayer(m));
+          mapMarkers = [];
+
+          const lineCoordsThere = routeThere.geometry.coordinates.map(c => [c[1], c[0]]);
+          routePolyline = L.polyline(lineCoordsThere, getModeLineStyle(mode)).addTo(leafletMap);
+
+          let boundsGroup = L.featureGroup([routePolyline]);
+
+          if (routeBack) {
+            const lineCoordsBack = routeBack.geometry.coordinates.map(c => [c[1], c[0]]);
+            returnPolyline = L.polyline(lineCoordsBack, { color: '#9333ea', weight: 4, opacity: 0.7, dashArray: '6, 6' }).addTo(leafletMap);
+            boundsGroup.addLayer(returnPolyline);
+          }
+
+          coords.forEach((pt, idx) => {
+            let color = idx === 0 ? '#16a34a' : (idx === coords.length - 1 ? '#dc2626' : '#d97706');
+            const m = L.circleMarker([pt.lat, pt.lon], { radius: 7, fillColor: color, color: '#ffffff', weight: 2, fillOpacity: 0.9 }).addTo(leafletMap).bindPopup(pt.name);
+            mapMarkers.push(m);
+          });
+
+          leafletMap.fitBounds(boundsGroup.getBounds(), { padding: [25, 25] });
+        }, 150);
+
+        currentCalculation = { tech: techObj.name, start: startText, target: targetText, distanceKm: totalDistanceKm, durationFormatted, isRound, modeLabel };
+
+      } catch (err) {
+        statusMsg.classList.add('hidden');
+        alert('Chyba při komunikaci s navigací.');
+      }
+    });
+
+    document.getElementById('btn-copy-km').addEventListener('click', (e) => {
+      if (!currentCalculation) return;
+      navigator.clipboard.writeText(`${currentCalculation.distanceKm} km`);
+      const btn = e.currentTarget;
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-check"></i> Zkopírováno!';
+      setTimeout(() => btn.innerHTML = orig, 1500);
+    });
+
+    document.getElementById('btn-copy-summary').addEventListener('click', (e) => {
+      if (!currentCalculation) return;
+      const c = currentCalculation;
+      const rText = c.isRound ? ' (TAM I ZPĚT)' : '';
+      navigator.clipboard.writeText(`${c.tech}: ${c.start} → ${c.target}${rText} [${c.modeLabel}] = ${c.distanceKm} km (${c.durationFormatted})`);
+      const btn = e.currentTarget;
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-check"></i> Zkopírováno!';
+      setTimeout(() => btn.innerHTML = orig, 1500);
+    });
+
+    const modal = document.getElementById('modal-settings');
+    const tabBtnTechs = document.getElementById('tab-btn-techs');
+    const tabBtnCompanies = document.getElementById('tab-btn-companies');
+    const tabTechs = document.getElementById('tab-techs');
+    const tabCompanies = document.getElementById('tab-companies');
+
+    document.getElementById('btn-settings').addEventListener('click', () => {
+      renderTechManageList();
+      renderCompanyManageList();
+      modal.classList.remove('hidden');
+    });
+    document.getElementById('btn-close-modal').addEventListener('click', () => modal.classList.add('hidden'));
+
+    tabBtnTechs.addEventListener('click', () => {
+      tabBtnTechs.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-red-600 text-white';
+      tabBtnCompanies.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200';
+      tabTechs.classList.remove('hidden');
+      tabCompanies.classList.add('hidden');
+    });
+
+    tabBtnCompanies.addEventListener('click', () => {
+      tabBtnCompanies.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-red-600 text-white';
+      tabBtnTechs.className = 'text-xs font-bold px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200';
+      tabCompanies.classList.remove('hidden');
+      tabTechs.classList.add('hidden');
+    });
+
+    function renderTechManageList() {
+      const list = document.getElementById('tech-manage-list');
+      list.innerHTML = '';
+      technicians.forEach((t, idx) => {
+        const item = document.createElement('div');
+        item.className = 'flex justify-between items-center p-2 bg-slate-50 rounded-lg text-xs border';
+        item.innerHTML = `<div><strong>${t.name}</strong><br><span class="text-slate-500">${t.start} (${t.lat}, ${t.lon})</span></div>
+                          <button type="button" class="text-red-500 hover:text-red-700 p-1" onclick="deleteTech(${idx})"><i class="fa-solid fa-trash-can"></i></button>`;
+        list.appendChild(item);
+      });
+    }
+
+    function renderCompanyManageList() {
+      const list = document.getElementById('company-manage-list');
+      list.innerHTML = '';
+      customCompanies.forEach((c, idx) => {
+        const item = document.createElement('div');
+        item.className = 'flex justify-between items-center p-2 bg-slate-50 rounded-lg text-xs border';
+        const coordsStr = (c.lat && c.lon) ? ` [GPS: ${c.lat}, ${c.lon}]` : '';
+        item.innerHTML = `<div><strong>${c.name}</strong><br><span class="text-slate-500">${c.address}${coordsStr}</span></div>
+                          <button type="button" class="text-red-500 hover:text-red-700 p-1" onclick="deleteCompany(${idx})"><i class="fa-solid fa-trash-can"></i></button>`;
+        list.appendChild(item);
+      });
+    }
+
+    window.deleteTech = function(idx) {
+      technicians.splice(idx, 1);
+      safeSet('tech_db_v40', technicians);
+      initTechs();
+      renderTechManageList();
+    };
+
+    window.deleteCompany = function(idx) {
+      customCompanies.splice(idx, 1);
+      safeSet('company_db_v40', customCompanies);
+      renderQuickTargetDropdown();
+      document.querySelectorAll('.via-quick-select').forEach(sel => populateViaDropdown(sel));
+      renderCompanyManageList();
+    };
+
+    document.getElementById('btn-add-tech').addEventListener('click', () => {
+      const name = document.getElementById('new-tech-name').value.trim();
+      const start = document.getElementById('new-tech-start').value.trim();
+      const lat = parseFloat(document.getElementById('new-tech-lat').value.trim());
+      const lon = parseFloat(document.getElementById('new-tech-lon').value.trim());
+      if (!name || !start || isNaN(lat) || isNaN(lon)) {
+        alert('Vyplňte prosím jméno, název výchozího místa i obě GPS souřadnice (lat/lon).');
+        return;
+      }
+      technicians.push({ id: Date.now().toString(), name, start, lat, lon });
+      safeSet('tech_db_v40', technicians);
+      initTechs();
+      renderTechManageList();
+      document.getElementById('new-tech-name').value = '';
+      document.getElementById('new-tech-start').value = '';
+      document.getElementById('new-tech-lat').value = '';
+      document.getElementById('new-tech-lon').value = '';
+    });
+
+    document.getElementById('btn-add-company').addEventListener('click', () => {
+      const name = document.getElementById('new-company-name').value.trim();
+      const address = document.getElementById('new-company-address').value.trim();
+      const lat = parseFloat(document.getElementById('new-company-lat').value.trim());
+      const lon = parseFloat(document.getElementById('new-company-lon').value.trim());
+      if (!name || !address) return;
+      const compObj = { name, address };
+      if (!isNaN(lat) && !isNaN(lon)) {
+        compObj.lat = lat;
+        compObj.lon = lon;
+      }
+      customCompanies.push(compObj);
+      safeSet('company_db_v40', customCompanies);
+      renderQuickTargetDropdown();
+      document.querySelectorAll('.via-quick-select').forEach(sel => populateViaDropdown(sel));
+      renderCompanyManageList();
+      document.getElementById('new-company-name').value = '';
+      document.getElementById('new-company-address').value = '';
+      document.getElementById('new-company-lat').value = '';
+      document.getElementById('new-company-lon').value = '';
+    });
+
+    initTechs();
+    renderQuickTargetDropdown();
+    initMap();
+  </script>
+</body>
+</html>
